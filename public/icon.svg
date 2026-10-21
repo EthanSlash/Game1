@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="夜市攤王">
+  <rect width="192" height="192" rx="36" fill="#14110f" />
+  <circle cx="96" cy="76" r="34" fill="#ffb03a" />
+  <rect x="40" y="116" width="112" height="12" rx="6" fill="#f5efe6" />
+  <rect x="56" y="136" width="16" height="24" rx="4" fill="#6b5f55" />
+  <rect x="120" y="136" width="16" height="24" rx="4" fill="#6b5f55" />
+</svg>
