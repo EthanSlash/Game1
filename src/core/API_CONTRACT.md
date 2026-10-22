@@ -79,14 +79,17 @@ OfflineSettlement = { gained; creditedMs; capped; timeWentBackwards }
 - `GameSnapshot` / `StallSnapshot` 是給 UI 的唯讀投影。UI **不得**自己算收入、成本或「錢夠不夠」，
   一律讀 `incomePerSec`、`upgradeCost`、`canUpgrade`、`canHire`、`canToggleSell`
   （怪獸8號審查第 4 點：錢不夠要 disabled 但仍顯示金額）。
-- `StallSnapshot.incomePerSec` 已含里程碑倍率；`GameSnapshot.incomePerSec` 是全部攤位加總。
+- `StallSnapshot.incomePerSec` 已含里程碑倍率；`GameSnapshot.incomePerSec` 是**前景**速率
+  （畫面上正在跳的數字，GDD §4.3／§5.1）。
 - `nextMilestone.progress` 為 0..1，已達成給 1。
 
 ## 4. 動作結果
 
-兩層語意一致（失敗不改狀態、不丟例外），但回傳形狀不同：
+兩層語意一致（不丟例外；**動作本身**不改任何狀態），但回傳形狀不同：
 
-- **門面層 `GameEngine`：`boolean`。** 成功 `true`；錢不夠／不允許 `false`，任何狀態都不變。
+- **門面層 `GameEngine`：`boolean`。** 成功 `true`；錢不夠／不允許 `false`，動作本身不改狀態。
+  ⚠️ 門面動作會**先結算到 `now`**（GDD §5），所以失敗後 `state()` 的 `balance` / `lastSettledAt`
+  可能已因結算前進——這是 GDD 規定的正常行為，不是「狀態完全不變」的反例。
   UI 收到 `false` 後照舊呼叫 `state()` 重畫（英雄所見即所測）。
 - **純函式層 `NightMarketCore`：`ActionResult`。** 帶失敗原因，供單元測試與工具除錯：
 
@@ -105,12 +108,13 @@ settle(state, now, mode: 'foreground' | 'offline'): SettleResult
 ```
 
 - `lastSettledAt` 是唯一水位線：入帳只依 `now - lastSettledAt` 計算，呼叫端不得自己累加 delta。
-- 只有 `mode: 'offline'` 套 `BalanceConfig.offline.capSeconds` 上限；`foreground` 不套。
+- 只有 `mode: 'offline'` 套 `BalanceConfig.offline.capSeconds` 上限；`foreground` 不套，
+  但**前景長空檔例外**：`elapsedMs > foreground.maxGapSeconds × 1000` 時改用離線規則（GDD v1.1 §4.6）。
 - 幂等：同一個 `now` 連呼兩次，第二次 `gained` 為 0。
 - **時鐘倒退**（`now < lastSettledAt`）：`gained = 0`、`elapsedMs = 0`、`timeWentBackwards = true`，
   **不得扣錢**。前景 `tick` 與離線 `onVisible` 都適用（怪獸8號 2026-10-22 補充）。
 - `capped = true` 表示這次被離線上限截斷。
-- **待 GDD 確認**：時鐘倒退後 `lastSettledAt` 要不要重新對齊到 `now`（建議對齊）。
+- 時鐘倒退後 `lastSettledAt` **對齊到 `now`**（GDD §4.6 定案）。
 
 ## 6. 存檔
 
@@ -145,7 +149,7 @@ settle(state, now, mode: 'foreground' | 'offline'): SettleResult
 GLM53幫手 v2 已完整收下怪獸8號的 3 項拍板與 4 項必改（`now` 標毫秒、`amount` 不承諾整數、
 `tick` 時鐘倒退、`toggleSell` 語意待 GDD），定案版全部保留，以下只列**結構性**差異。
 
-沿用：時間全部注入、唯讀快照、失敗不改狀態、離線結算由 core 決定、`sell-<id>` 走 core、
+沿用：時間全部注入、唯讀快照、動作本身不改狀態（動作前結算照常，GDD §5）、離線結算由 core 決定、`sell-<id>` 走 core、
 存檔字串進字串出。
 
 改掉的部分：
