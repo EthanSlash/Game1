@@ -259,6 +259,56 @@ describeCore('D 存檔 / 讀檔（純函式層，GDD §8）', () => {
     expect(def.maxLevel).not.toBeNull();
     expect(stallOf(result.state, CHICKEN).level).toBe(def.maxLevel);
   });
+
+  /**
+   * D6（規格空白 #2，怪獸8號 2026-10-22 核准；GDD v1.2 待補文字）：
+   * **已解鎖但 `level = 0` 的存檔，讀檔時正規化成 Lv1，不算損毀。**
+   *
+   * 為什麼要驗：GDD §3 不變式 2 說「已解鎖的攤位 level >= 1」，
+   * 但 §8.2 的損毀表只列「非整數或 < 0」。這種存檔要嘛正規化、要嘛擋掉，
+   * 規格原本沒寫 —— 核准後採正規化（守住 §3 不變式 2）。
+   */
+  it('D6 已解鎖但 level = 0：讀檔時正規化成 Lv1，不算損毀', () => {
+    const core = requireCore();
+    const raw = core.serialize(core.createInitialState(T0), T0);
+    const stateObj = saveState(raw);
+    const stalls = stateObj['stalls'] as Record<string, unknown>;
+    const chicken = stalls[CHICKEN] as Record<string, unknown>;
+    chicken['unlocked'] = true;
+    chicken['level'] = 0;
+
+    const result = loadSafely(
+      JSON.stringify({ version: BALANCE.save.currentVersion, savedAt: T0, state: stateObj }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('讀檔應該成功');
+    expect(stallOf(result.state, CHICKEN).unlocked).toBe(true);
+    expect(stallOf(result.state, CHICKEN).level).toBe(1);
+  });
+
+  /**
+   * D7（規格空白 #3，怪獸8號 2026-10-22 核准；GDD v1.2 待補文字）：
+   * **版本以外層信封的 `version` 為準，內層的 `saveVersion` 不檢查，
+   * 讀檔後一律改寫成 `currentVersion`。**
+   *
+   * GDD §8.1 目前寫「`state.saveVersion` 必須與 `version` 相同」，
+   * 但 §8.2 的失敗表沒有這一列 —— 規格空白。核准後採「以信封為準」。
+   */
+  it('D7 版本以信封為準：內層 saveVersion 不一致不擋讀檔，讀完改寫成 currentVersion', () => {
+    const core = requireCore();
+    const raw = core.serialize(core.createInitialState(T0), T0);
+    const stateObj = saveState(raw);
+    stateObj['saveVersion'] = 999;
+
+    const result = loadSafely(
+      JSON.stringify({ version: BALANCE.save.currentVersion, savedAt: T0, state: stateObj }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('讀檔應該成功');
+    expect(result.state.saveVersion).toBe(BALANCE.save.currentVersion);
+  });
 });
 
 describeEngine('D 存檔 / 讀檔（門面層，GDD §6）', () => {

@@ -132,6 +132,53 @@ describeEngine('E 背景回來不重複計算（門面層，GDD §6、§9 E1–E
     expect(withinTolerance(engine.state().balance, 60 * CLERK_RATE)).toBe(true);
   });
 
+  /**
+   * E3 重複 `onHidden`（規格空白 #1，怪獸8號 2026-10-22 核准；GDD v1.2 待補文字）。
+   *
+   * 規格原文（待寫入 GDD §6）：**重複的 `onHidden` 只有第一次會結算，
+   * 之後在 `onVisible` 之前呼叫都直接忽略。**
+   *
+   * 為什麼要驗：瀏覽器的 `visibilitychange` 與 `pagehide` 常常同時觸發。
+   * 若第二次 `onHidden` 又結一次前景收益，玩家「人不在卻開賣中」的攤位
+   * 會被當成「人在顧攤」入帳 —— 違反 GDD §2／§4.3「背景只算店員」。
+   */
+  it('E3 重複 onHidden：只有第一次會結算，之後在 onVisible 之前都忽略', () => {
+    const engine = freshEngine();
+    engine.init(T0, null);
+    // 只有「手動開賣」、沒有店員：前景算它（§4.3），但背景期間不算。
+    engine.toggleSell(CHICKEN, T0);
+    engine.tick(T0 + 10_000);
+    expect(withinTolerance(engine.state().balance, 10)).toBe(true);
+
+    engine.onHidden(T0 + 10_000);
+    const afterFirstHidden = engine.state();
+    expect(withinTolerance(afterFirstHidden.balance, 10)).toBe(true);
+
+    // 間隔刻意小於 maxGapSeconds：這樣「若被當成前景結算」就一定會多算錢，
+    // 而不會被 §4.6 的長空檔轉離線規則蓋掉（覆蓋值在 balance.json，不寫死）。
+    const gapMs = Math.floor((BALANCE.foreground.maxGapSeconds * 1000) / 2);
+    engine.onHidden(T0 + 10_000 + gapMs);
+    engine.onHidden(T0 + 10_000 + gapMs * 2);
+
+    // 沒有店員 → 背景期間不該有任何入帳（重複的 onHidden 不得再結一次前景收益）。
+    expect(withinTolerance(engine.state().balance, afterFirstHidden.balance)).toBe(true);
+    expect(engine.state().lastSettledAt).toBe(afterFirstHidden.lastSettledAt);
+  });
+
+  it('E3 重複 onHidden 之後，onVisible 的離線結算仍然涵蓋整段隱藏期間', () => {
+    const engine = engineWithClerk();
+    engine.tick(T0 + 160_000);
+    engine.onHidden(T0 + 160_000);
+
+    // 重複的 onHidden：應該被忽略，離線區間不能被截短。
+    engine.onHidden(T0 + 260_000);
+
+    const frame = engine.onVisible(T0 + 760_000);
+    // 離線區間 = [T0+160s, T0+760s] = 600 秒 × 1.25 = 750。
+    expect(withinTolerance(frame.offline?.gained ?? NaN, 750)).toBe(true);
+    expect(withinTolerance(engine.state().balance, 12.5 + 750)).toBe(true);
+  });
+
   it('前景時鐘倒退：不給收益、不扣錢，水位線對齊到 now', () => {
     const engine = freshEngine();
     engine.init(T0, null);

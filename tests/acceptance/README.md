@@ -39,12 +39,27 @@
 | `economy.test.ts` | A1–A7 購買／解鎖／雇用、B1–B5 收益公式與里程碑 |
 | `offline.test.ts` | C1–C5 離線：0 秒／剛好上限／超限截斷／時鐘倒退／冪等 |
 | `longgap.test.ts` | C6–C7 前景長空檔自動轉離線（GDD v1.1 §4.6） |
-| `save.test.ts` | D1–D5 存檔：還原、損毀、缺欄位、v0 遷移、未知版本 |
-| `tick.test.ts` | E0–E2 水位線、冪等、背景回來不重複計算 |
+| `save.test.ts` | D1–D5 存檔：還原、損毀、缺欄位、v0 遷移、未知版本；D6–D7 版本正規化 |
+| `tick.test.ts` | E0–E2 水位線、冪等、背景回來不重複計算；E3 重複 `onHidden` 冪等 |
 | `engine.test.ts` | 門面層（UI 視角）：冷啟動、動作失敗回 `false`、`can*` 旗標、`save` |
 | `format.test.ts` | F1–F5 數字格式（9999 / 1萬 / 1億 / 1兆） |
 | `spec-consistency.test.ts` | 字面值 ↔ oracle ↔ `balance.json` 三方交叉檢查（**不依賴 M1**） |
 | `harness.test.ts` | 驗收環境自檢 + 契約方法齊全性（**不依賴 M1**） |
+
+## 待補規格（v1.2）：三個規格空白的驗收
+
+2026-10-22 怪獸8號裁決三個 GDD 沒寫死的規格空白，**已核准的解讀**如下。
+這三條的 GDD 文字還沒進 `docs/GDD.md`（由 M1／sim PR 的 GDD v1.2 補上），
+但驗收先照核准的解讀寫死，規格文字一落地就是同一條規則：
+
+| 編號 | 規格 | 驗收案例 |
+|---|---|---|
+| #1 | 重複的 `onHidden` 只有第一次會結算，之後在 `onVisible` 之前呼叫都直接忽略（GDD §6） | `tick.test.ts` E3 ×2 |
+| #2 | 已解鎖但 `level = 0` 的存檔，讀檔時正規化成 Lv1，不算損毀（GDD §8.2） | `save.test.ts` D6 |
+| #3 | 版本以外層信封的 `version` 為準，內層 `saveVersion` 不檢查，讀檔後一律改寫成 `currentVersion`（GDD §8.1／§8.2） | `save.test.ts` D7 |
+
+**E3 為什麼是兩支**：一支用「只有手動開賣、沒有店員」測（背景期間手動開賣不算收入），
+一支用「有店員」測（`onVisible` 的離線結算仍然涵蓋整段隱藏期間、沒有被截短）。
 
 ## 為什麼 M1 沒交也能綠
 
