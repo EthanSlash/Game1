@@ -10,6 +10,13 @@
  */
 export { formatMoney } from './money';
 
+/**
+ * M1 公開 API 契約（型別草稿）：GameState / GameSnapshot / ActionResult / SettleResult /
+ * SaveEnvelope / LoadResult / NightMarketCore。只有型別，沒有實作。
+ * 詳見 `src/core/API_CONTRACT.md`。
+ */
+export type * from './contract';
+
 /** 骨架期的唯讀畫面快照；M1 會由真正的 GameState 取代。 */
 export interface Snapshot {
   readonly balance: number;
