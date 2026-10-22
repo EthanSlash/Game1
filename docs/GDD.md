@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 版本 | 1.0（2026-10-22 定案） |
+| 版本 | 1.1（2026-10-22 定案；v1.1 依 怪獸8號 01:50 審查補前景長空檔與存檔時機） |
 | 對應存檔版本 | `saveVersion = 1` |
 | 唯一數值來源 | `data/balance.json`（本文件只寫公式與規則，不重複列值） |
 | 對應程式契約 | `src/core/api.ts`（`NightMarketCore` / `GameEngine`） |
@@ -22,12 +22,13 @@
 | `elapsedMs` | `now - lastSettledAt`，毫秒。 |
 | `creditedMs` | 實際計入收益的毫秒（離線時被上限截斷）。 |
 | `capSeconds` | 離線收益上限秒數，`data/balance.json` 的 `offline.capSeconds`（現值 14400 = 4 小時）。 |
+| `maxGapMs` | 前景長空檔門檻毫秒，`foreground.maxGapSeconds × 1000`（現值 60 秒）。超過此值的前景結算改用離線規則（§4.6）。 |
 | 金額單位 | 新台幣「元」，型別 `number`。 |
 | 水位線 | `GameState.lastSettledAt`，代表「收益已結算到哪個時間點」。**唯一**防止重複計算的依據。 |
 | 攤位順序 | `data/balance.json` 的 `stalls[]` 陣列順序，UI 與解鎖鏈都照此順序。 |
 
-**時間單位鐵則**：只有 `capSeconds` 是秒，其餘執行期欄位（`now`、`elapsedMs`、`creditedMs`、`lastSettledAt`）都是毫秒。
-PR 內出現 `* 1000` 或 `/ 1000` 只允許出現在「秒↔毫秒」轉換的單一位置。
+**時間單位鐵則**：`capSeconds`、`foreground.maxGapSeconds`、`save.foregroundIntervalSeconds` 是秒（設定值），其餘執行期欄位（`now`、`elapsedMs`、`creditedMs`、`lastSettledAt`）都是毫秒。
+PR 內出現 `* 1000` 或 `/ 1000` 只允許出現在「秒↔毫秒」轉換的單一位置（`capMs`、`maxGapMs`、存檔間隔換算各一處）。
 
 **金額精度**：`balance` 與 `gained` 都是浮點數，**不做取整**。取整只發生在顯示層（見 §7）。
 理由：若每 tick（約 250ms）都 floor，1/s 的攤位每 tick 只賺 0.25 元，會被 floor 成 0，收入直接消失。
@@ -116,6 +117,8 @@ stallIncomePerSec(level, clerkHired) =
 | 前景（`tick` / 門面動作前的結算 / `onHidden`） | `unlocked && (clerkHired || selling)` |
 | 離線（`onVisible` / 冷啟動 `init`） | `unlocked && clerkHired` |
 
+- **長空檔例外（v1.1）**：前景入口若 `elapsedMs > maxGapMs`，這次改用離線條件（只計店員）並套離線上限，見 §4.6。
+
 - **沒有店員、又沒手動開賣 → 該攤收益為 0。**
 - **離線只算有店員的攤位**：手動開賣是「人在顧攤」，背景期間不算。
 - 玩家手動開賣的攤位在離線時段完全不計入；回到前景後 `selling` 狀態保留（不自動關閉）。
@@ -135,7 +138,8 @@ upgradeCost(level) = Math.floor(upgradeCostBase × upgradeCostGrowth^(level-1))
 ```
 
 - `level` 是**目前等級**（即將從 Lv → Lv+1 的價格）。
-- **成本一律是整數**（floor）。理由：`餘額 == 價格` 的邊界案例要能精確斷言（驗收 A2）。
+- **成本在 `<= Number.MAX_SAFE_INTEGER` 時保證是整數**（`Math.floor`）。理由：`餘額 == 價格` 的邊界案例要能精確斷言（驗收 A2，只在此範圍測）。
+- 成本超過 `Number.MAX_SAFE_INTEGER` 後**不再保證整數**：Lv150 的大腸包小腸成本約 `14000 × 1.25^149 ≈ 3.8e18`，已超出精確整數範圍。MVP 7 天內可達的最大成本約 6e13（§10），碰不到這條界線；`maxLevel = 150` 只是防呆。
 - `level >= maxLevel` → 沒有下一級，`upgradeCost = null`。
 
 ### 4.5 雇用與解鎖成本
@@ -156,14 +160,19 @@ settle(state, now, mode: 'foreground' | 'offline'): SettleResult
    - `balance` **不得變小**（不扣錢）
    - `lastSettledAt` **對齊到 `now`**（水位線跟著往回，避免時鐘設錯後長時間沒有收益）
 3. `elapsedMs >= 0`：
-   - `mode === 'offline'`：
+   - **前景長空檔自動轉離線（v1.1 新增）**：
+     `maxGapMs = foreground.maxGapSeconds × 1000`（現值 60 秒）。
+     當呼叫端要求 `'foreground'`、但 `elapsedMs > maxGapMs` 時，**這次一律改用 `'offline'` 規則結算**（只計店員、套 4h 上限）。
+     理由：分頁凍結、電腦睡眠時 `visibilitychange` 不一定會觸發；玩家手動把時鐘往前調時，下一次 `tick` 會用前景速率（含手動開賣、無上限）一次補上全部時間，等於直接繞過「離線上限 4h」。
+     形式化：`effectiveMode = (requested === 'foreground' && elapsedMs > maxGapMs) ? 'offline' : requested`。
+     這條規則適用於**所有**前景入口：`tick`、`onHidden`、以及動作前的結算；`init` / `onVisible` 本來就是 `'offline'`。
+   - `effectiveMode === 'offline'`：
      `capMs = capSeconds × 1000`
      `creditedMs = min(elapsedMs, capMs)`
      `capped = elapsedMs > capMs`
-   - `mode === 'foreground'`：
+   - `effectiveMode === 'foreground'`：
      `creditedMs = elapsedMs`、`capped = false`
-     （契約 §5：只有離線套上限。已知風險：前景分頁被系統凍結很久或玩家手動改時鐘前進時會一次補一大段，MVP 接受，不另做前景上限。）
-   - `gained = ratePerSec(mode) × creditedMs / 1000`（rate 用**結算當下**的等級與店員狀態，不追溯歷史等級）
+   - `gained = ratePerSec(effectiveMode) × creditedMs / 1000`（rate 用**結算當下**的等級與店員狀態，不追溯歷史等級）
    - `balance += gained`
 4. `lastSettledAt = now`（往前對齊）
 
@@ -176,6 +185,7 @@ settle(state, now, mode: 'foreground' | 'offline'): SettleResult
 ## 5. 動作規則
 
 所有動作都是「先 `settle(now, 'foreground')`，再嘗試動作」。
+長空檔時這次結算會自動改用離線規則（§4.6），但**不影響動作本身的成敗判定**——動作照表中的前置條件與成本執行。
 動作失敗時**狀態完全不變**（含 `lastSettledAt` 已因結算前進的情況——結算本身照常，動作部分不動）。
 
 > 純函式層 `NightMarketCore` 的動作**不結算**（方法沒有 `now` 參數）：呼叫端要自己先 `settle`。
@@ -221,14 +231,32 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 | 呼叫 | 行為 |
 |---|---|
 | `init(now, savedState)` | `savedState === null` → 直接開新局（`lastSettledAt = now`、`loadError = null`）。有字串 → `load(savedState)`：成功就用存檔開局；失敗則開新局並把原因放 `loadError`（`corrupt` / `unknown-version` / `unsupported-shape`），**不彈錯誤、不崩**。之後立刻 `settle(now, 'offline')`：`gained > 0` 才把 `offline` 填進 `EngineFrame`。 |
-| `tick(now)` | 前景推進：`settle(now, 'foreground')`，`offline` 恆為 `null`。**在 `onHidden` 之後、`onVisible` 之前呼叫 `tick` 一律忽略**（不結算、不改狀態），避免背景 timer 與離線結算重複計入。 |
-| `onHidden(now)` | 先 `settle(now, 'foreground')` 把前景收益結清，再標記 `hidden = true`。 |
+| `tick(now)` | 前景推進：`settle(now, 'foreground')`。若 `elapsedMs > maxGapMs`（§4.6 長空檔），這次自動改用離線規則結算，`gained > 0` 時填入 `frame.offline` 讓 UI 跳彈窗；其餘情況 `offline = null`。**在 `onHidden` 之後、`onVisible` 之前呼叫 `tick` 一律忽略**（不結算、不改狀態），避免背景 timer 與離線結算重複計入。 |
+| `onHidden(now)` | 先 `settle(now, 'foreground')` 把前景收益結清（長空檔同樣走 §4.6 自動轉離線），再標記 `hidden = true`。回傳 `void`，這種入帳**不跳彈窗**（見下方邊界說明）。 |
 | `onVisible(now)` | 標記 `hidden = false`，`settle(now, 'offline')`；`gained > 0` 才回 `offline`（含 `creditedMs`、`capped`、`timeWentBackwards`）。 |
 | `save(now)` | **只序列化**（`savedAt = now`），不結算。回傳字串，UI 原樣寫 `localStorage`。 |
 | `state()` | 回目前 `GameSnapshot`。 |
 
 離線彈窗規則：`offline !== null`（即 `gained > 0`）才顯示；`gained === 0`（含 0 秒、時鐘倒退、全部攤位都沒有店員）**不跳**。
 `capped === true` 時 UI 顯示「已達 4 小時上限」提示。
+
+**長空檔的彈窗邊界（v1.1）**：只有會回傳 `EngineFrame` 的入口（`init` / `tick` / `onVisible`）才會帶 `offline`。`onHidden` 與動作前的自動離線結算只入帳、不跳彈窗：這兩個入口的回傳型別是 `void` / `boolean`，沒有 frame 可帶。實務上 UI 每 250ms `tick`，長空檔幾乎都由 `tick` 先偵測到；漏掉的只影響提示，不影響金額與上限（金額已按離線規則入帳）。
+
+### 6.1 存檔時機（UI 硬規則，v1.1 新增）
+
+`save()` 只做序列化（不結算），**什麼時候存是 UI 的責任**。沒有這些規則，App 在背景被系統直接殺掉時會遺失最後一次存檔之後的進度。
+
+| 時機 | 規則 |
+|---|---|
+| `onHidden(now)` 之後 | **立刻** `save(now)`（同一個 `now`）。這是「被系統殺掉」前最重要的一次。 |
+| 每次動作成功後 | `upgrade` / `hire` / `unlock` / `toggleSell` 回 `true` 後**立刻** `save(now)`（用該動作傳入的 `now`）。回 `false` 不必存。 |
+| 前景定期 | 每 `save.foregroundIntervalSeconds` 秒（現值 10 秒）`save(Date.now())`；可與 `tick` 的 timer 共用，累積滿 N 秒做一次。 |
+| `init` 之後 | 不強制存檔（下一次動作或定期存檔會寫）。 |
+
+- UI 只把字串原樣寫進**單一** `localStorage` key，不解析、不改寫；key 名稱由 UI 決定（GDD 不指定）。
+- 寫入失敗（quota、隱私模式）不得影響遊戲進行：吞掉例外、最多 console 警告，下一次時機再試。
+- 存檔字串裡的 `lastSettledAt` 是最後一次**結算**的時間，而結算每 tick 都在推進；因此重載後會用離線規則補算「最後一次存檔到重載」之間的時間（只計店員、上限 4h）。代價是手動開賣的攤位最多損失一個存檔間隔（10 秒）的收益，MVP 接受。
+- 驗收（MiniMax31）：做一個動作 → 重新整理頁面 → 進度必須保留到該動作（對應 §9 D1 與 E2E G 系列）。
 
 ---
 
@@ -339,7 +367,7 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 | # | 案例 | 可觀察的期望 |
 |---|---|---|
 | A1 | 餘額 < 價格 | 門面回 `false`；`state()` 各欄位不變（除結算外）；純函式層 `{ok:false, reason:'insufficient-funds'}` 且 `state` 同參考 |
-| A2 | 餘額 == 價格 | 成功，`balance === 0`（成本是整數，可用 `===`） |
+| A2 | 餘額 == 價格 | 成功，`balance === 0`（成本 ≤ `Number.MAX_SAFE_INTEGER` 時保證整數、可用 `===`；**只在低等級測**，建議 Lv1–Lv10） |
 | A3 | 餘額 > 價格 | 成功，`balance === 舊值 - cost`（浮點容差見下） |
 | A4 | 升級成本 | `floor(upgradeCostBase × upgradeCostGrowth^(level-1))` |
 | A5 | 升級後 | `level + 1`，收益同步變為新等級的公式值 |
@@ -355,6 +383,8 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 | C3 | 超過 4h | `creditedMs === capSeconds × 1000`、`capped === true`、`gained` 只算 4h |
 | C4 | 時鐘倒退 | `gained 0`、`timeWentBackwards true`、`balance` 不變小、`lastSettledAt` 對齊到 `now`；不跳彈窗 |
 | C5 | 負時間差（多往前倒退幾次） | 同上，且不會累積負收益 |
+| C6 | 前景長空檔（`tick` 路徑） | `tick(t2)` 且 `t2 - lastSettledAt > maxGapMs` → 這次按**離線**規則入帳（只算店員、套 `capSeconds` 上限），`frame.offline` 有值且 `gained > 0`；`capped` 依是否超過 `capSeconds` |
+| C7 | 前景長空檔（動作前結算） | 同樣按離線規則入帳（**不因手動開賣而套前景速率**）；動作本身照規則成功／失敗；此入口不跳彈窗（回 `boolean`） |
 | D1 | save → load | 金錢、等級、解鎖、店員、開賣狀態完整還原，`lastSettledAt` 一致 |
 | D2 | JSON 損毀 | 不丟例外；`reason = 'corrupt'`；門面開新局 |
 | D3 | 缺必要欄位 | 不丟例外；`reason = 'unsupported-shape'`；門面開新局 |
@@ -381,7 +411,9 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 
 ## 10. 平衡目標與現況模擬
 
-`data/balance.json` 現值下的模擬結果。**模擬假設**（MiMo26 之後要能重現）：
+> ⚠️ **待 `tools/sim` 重現（v1.1）**：下表的「現值模擬」欄目前無法從 repo 重跑（`tools/sim/run.ts` 還是骨架）。重現腳本由 DeepSeek41 在下一支 PR 補上，能重跑且數字一致後再移除本標示。
+
+`data/balance.json` 現值下的模擬結果。**模擬假設**（`tools/sim` 必須能重現）：
 
 - 全程前景、每 1 秒結算一次（等於每 tick 結算，浮點誤差在此量級可忽略）。
 - 開局 1 秒內手動開賣雞排車（`selling = true`）。
@@ -401,7 +433,7 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 | 里程碑時間 | 第一個 Lv25 在 1 小時內 | 雞排 0.44h、珍奶 0.81h |
 
 - 目標欄位是**設計意圖**（給 MiMo26 平衡模擬對照）；模擬欄位是現值的實測值。偏差超過 ±30% 時提 issue 討論調值，不要直接改 `balance.json`。
-- 數值安全邊界：MVP 可達的最大升級成本約 6e13 元（Lv100 的大腸包小腸），遠低於 `Number.MAX_SAFE_INTEGER`（9.007e15）。`maxLevel = 150` 只是防呆上限，正常 7 天內到不了。
+- 數值安全邊界：MVP 7 天內可達的最大升級成本約 6e13 元（Lv100 的大腸包小腸），遠低於 `Number.MAX_SAFE_INTEGER`（9.007e15），所以 A2 的 `===` 斷言在這個範圍成立。`maxLevel = 150` 只是防呆上限，正常 7 天內到不了；Lv150 的大腸包小腸成本約 3.8e18 已超過 `MAX_SAFE_INTEGER`、**不保證整數**（§4.4），不在驗收範圍。
 - 若之後要延長遊戲壽命，優先調 `incomeGrowthPerLevel`／`upgradeCostGrowth`，不要動公式。
 
 ---
@@ -409,7 +441,9 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 ## 11. 不在 MVP 範圍
 
 廣告、內購、轉生／ prestige、雲端存檔、多存檔槽、音效、動畫、排行榜、
-前景收益上限（已知風險見 §4.6）、店員升級、攤位外觀解鎖、離線加速道具。
+店員升級、攤位外觀解鎖、離線加速道具。
+
+> v1.1 起「前景長空檔」不再列為已知風險：超過 `maxGapMs` 的前景結算改用離線規則（§4.6）。這不是一般性的前景收益上限（60 秒內的正常連續結算完全不受影響）。
 
 ---
 
@@ -418,6 +452,7 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 | 日期 | 版本 | 變更 |
 |---|---|---|
 | 2026-10-22 | 1.0 | 初版定案：公式、動作、離線、存檔 v1 + v0 遷移、數字格式、平衡目標。解決 `src/core/API_CONTRACT.md` §9 的 8 個待定項。 |
+| 2026-10-22 | 1.1 | 依 怪獸8號 01:50 審查修訂：①前景長空檔（> `foreground.maxGapSeconds`）自動改用離線規則結算並在 `tick` 帶出彈窗（§4.6、§6、§9 C6/C7）；②補存檔時機 UI 硬規則（§6.1）；③升級成本整數保證限定在 ≤ `MAX_SAFE_INTEGER`、A2 限定低等級（§4.4、§9）；④§10 模擬結果標示待 `tools/sim` 重現。`balance.json` 新增 `foreground.maxGapSeconds` 與 `save.foregroundIntervalSeconds`。 |
 
 已解決的待定項（原 `API_CONTRACT.md` §9）：
 
@@ -442,7 +477,8 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
   "clerkIncomeMultiplier": 1.25,
   "milestones": [ { "level": 25, "multiplier": 2 }, ... ],
   "offline": { "capSeconds": 14400 },
-  "save": { "currentVersion": 1, "minSupportedVersion": 0 },
+  "foreground": { "maxGapSeconds": 60 },
+  "save": { "currentVersion": 1, "minSupportedVersion": 0, "foregroundIntervalSeconds": 10 },
   "stalls": [
     {
       "id": "chicken-steak",
@@ -463,4 +499,5 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 - `stalls` 的順序就是解鎖順序與畫面順序，不得重排。
 - 讀取方式：`import balance from '../../data/balance.json'`（`tsconfig.json` 已開 `resolveJsonModule`），
   型別以 `BalanceConfig` 標註。程式**不得**把任何數值寫死在程式碼裡（`AGENTS.md` 硬規則 2）。
-- 目前完整內容就是 `data/balance.json`（5 攤、里程碑 25/50/100、離線 14400 秒）。
+- `foreground.maxGapSeconds`：前景長空檔門檻（§4.6）。`save.foregroundIntervalSeconds`：UI 定期存檔間隔（§6.1）。兩者都只是設定值，程式不得寫死。
+- 目前完整內容就是 `data/balance.json`（5 攤、里程碑 25/50/100、離線 14400 秒、前景門檻 60 秒、存檔間隔 10 秒）。
