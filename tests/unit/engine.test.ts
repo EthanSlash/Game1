@@ -73,6 +73,35 @@ describe('init（GDD §6）', () => {
     const frame = engine.init(T0 + 60_000, core.serialize(core.createInitialState(T0), T0));
     expect(frame.offline).toBeNull();
   });
+
+  it('讀檔失敗的分類：unknown-version / unsupported-shape 都開新局', () => {
+    const valid = JSON.parse(core.serialize(core.createInitialState(T0), T0)) as Record<string, unknown>;
+    const futureVersion = { ...valid, version: BALANCE_CONFIG.save.currentVersion + 1 };
+    const badShape = JSON.parse(JSON.stringify(valid)) as Record<string, unknown>;
+    delete (badShape['state'] as Record<string, unknown>)['balance'];
+
+    for (const [raw, reason] of [
+      [JSON.stringify(futureVersion), 'unknown-version'],
+      [JSON.stringify(badShape), 'unsupported-shape'],
+    ] as const) {
+      const engine = createGameEngine(BALANCE_CONFIG);
+      const frame = engine.init(T0, raw);
+      expect(frame.loadError).toBe(reason);
+      expect(frame.offline).toBeNull();
+      expect(frame.snapshot.balance).toBe(BALANCE_CONFIG.startingBalance);
+      expect(frame.snapshot.lastSettledAt).toBe(T0);
+    }
+  });
+
+  it('存檔水位線在未來（時鐘倒退）→ 不給收益、水位線對齊 now', () => {
+    const engine = createGameEngine(BALANCE_CONFIG);
+    const frame = engine.init(T0, saveWithClerk(T0 + 60_000));
+
+    expect(frame.loadError).toBeNull();
+    expect(frame.offline).toBeNull();
+    expect(frame.snapshot.lastSettledAt).toBe(T0);
+    expect(frame.snapshot.balance).toBe(0);
+  });
 });
 
 describe('tick / onHidden / onVisible（GDD §6）', () => {
@@ -162,6 +191,41 @@ describe('tick / onHidden / onVisible（GDD §6）', () => {
     expect(frame.offline?.creditedMs).toBe(capMs);
     expectClose(frame.offline?.gained ?? 0, (chickenRate * capMs) / 1000);
   });
+
+  it('C6 邊界：長空檔但入帳 0（只有手動開賣）→ offline 為 null', () => {
+    const engine = createGameEngine(BALANCE_CONFIG);
+    engine.init(T0, null);
+    engine.toggleSell('chicken-steak', T0);
+
+    const frame = engine.tick(T0 + BALANCE_CONFIG.foreground.maxGapSeconds * 1000 + 60_000);
+    expect(frame.offline).toBeNull();
+    expect(frame.snapshot.balance).toBe(BALANCE_CONFIG.startingBalance);
+  });
+
+  it('重複 onHidden（visibilitychange + pagehide）不會把背景時間當前影入帳', () => {
+    const engine = createGameEngine(BALANCE_CONFIG);
+    engine.init(T0, null);
+    engine.toggleSell('chicken-steak', T0);
+
+    engine.onHidden(T0 + 10_000);
+    expectClose(engine.state().balance, 10);
+
+    engine.onHidden(T0 + 40_000);
+    expectClose(engine.state().balance, 10);
+
+    const frame = engine.onVisible(T0 + 40_000);
+    expect(frame.offline).toBeNull();
+    expectClose(frame.snapshot.balance, 10);
+  });
+
+  it('onHidden 長空檔改用離線規則（只計店員、套上限）', () => {
+    const engine = createGameEngine(BALANCE_CONFIG);
+    engine.init(T0, saveWithClerk(T0));
+    const capMs = BALANCE_CONFIG.offline.capSeconds * 1000;
+
+    engine.onHidden(T0 + capMs + 60_000);
+    expectClose(engine.state().balance, (chickenRate * capMs) / 1000);
+  });
 });
 
 describe('動作（GDD §5）', () => {
@@ -179,6 +243,24 @@ describe('動作（GDD §5）', () => {
     expect(engine.upgrade('chicken-steak', T0 + 20_000)).toBe(false);
     expectClose(engine.state().balance, 10);
     expect(engine.state().stalls[0]?.level).toBe(2);
+  });
+
+  it('C7：動作前的長空檔結算用離線規則（手動開賣不套前景速率）', () => {
+    const longGapMs = BALANCE_CONFIG.foreground.maxGapSeconds * 1000 + 60_000;
+
+    // 只有手動開賣 → 長空檔期間視為離線，不入帳；動作本身照規則失敗。
+    const openedOnly = createGameEngine(BALANCE_CONFIG);
+    openedOnly.init(T0, null);
+    openedOnly.toggleSell('chicken-steak', T0);
+    expect(openedOnly.upgrade('chicken-steak', T0 + longGapMs)).toBe(false);
+    expectClose(openedOnly.state().balance, 0);
+
+    // 有店員 → 長空檔按離線速率入帳，動作照規則成功（升級只扣成本）。
+    const withClerk = createGameEngine(BALANCE_CONFIG);
+    withClerk.init(T0, saveWithClerk(T0, 1_000));
+    expect(withClerk.upgrade('chicken-steak', T0 + longGapMs)).toBe(true);
+    expectClose(withClerk.state().balance, 1_000 + (chickenRate * longGapMs) / 1000 - 10);
+    expect(withClerk.state().stalls[0]?.level).toBe(2);
   });
 
   it('錢不夠的動作回 false，不丟例外', () => {

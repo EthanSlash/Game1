@@ -95,11 +95,17 @@ export function createGameEngine(config: BalanceConfig): GameEngine {
       // GDD §6：背景期間的 tick 一律忽略（不結算、不改狀態）。
       if (hidden) return frame(null, null);
       const result = advance(now, 'foreground');
-      // 一般前景結算不跳彈窗；只有前景長空檔自動轉離線的入帳才帶 offline（GDD §4.6）。
+      // 一般前景結算不跳彈窗；只有「core 自動轉離線」的入帳才帶 offline（GDD §4.6）。
+      // 前景結算只有在 elapsedMs > maxGapMs 時才可能被離線上限截斷，所以這個判定
+      // 與 core 的 effectiveMode 等價，不需要另外複製一份規則。
       return frame(result.elapsedMs > maxGapMs ? offlineOf(result) : null, null);
     },
 
     onHidden(now: TimestampMs): void {
+      // 重複的 hidden 事件（visibilitychange 與 pagehide 常同時觸發）只結算第一次：
+      // 背景期間再用 'foreground' 結算，會把手動開賣的攤位當成「人在顧攤」入帳
+      // （GDD §2、§4.3）。GDD §6 未明定重複呼叫，這裡取「只結一次」的保守解讀。
+      if (hidden) return;
       advance(now, 'foreground');
       hidden = true;
     },

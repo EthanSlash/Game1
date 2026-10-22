@@ -98,3 +98,156 @@ body {
   color: var(--locked);
   line-height: 1.6;
 }
+
+/* ===== M2 骨架期元件樣式（contract-independent；結構見 src/ui/app.ts） ===== */
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  margin: 0 -16px;
+  padding: 4px 16px 8px;
+}
+
+/* 攤位卡內部 */
+.stall__art {
+  font-size: 2rem;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.stall__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stall__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.stall__level {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.stall__income {
+  color: var(--accent);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 里程碑進度條：--pct 由 render 注入（0~100 的整數） */
+.stall__progress {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.stall__progress-fill {
+  display: block;
+  height: 100%;
+  width: var(--pct, 0%);
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 0.2s ease;
+}
+
+/* 按鈕 */
+.stall__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  flex: 1;
+  padding: 10px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--sell {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: transparent;
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1d1409;
+  font-weight: 700;
+}
+
+/* 離線收益彈窗 */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 24px;
+}
+
+/* display:flex 會蓋掉 [hidden] 預設值，必須明寫 */
+.modal[hidden] {
+  display: none;
+}
+
+.modal__panel {
+  width: 100%;
+  max-width: 320px;
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal__title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.modal__amount {
+  margin: 0;
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.modal__duration {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.modal__cap-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+

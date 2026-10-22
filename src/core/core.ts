@@ -26,7 +26,7 @@ import type {
   TimestampMs,
 } from './api';
 import { loadSave, serializeSave } from './save';
-import { secondsToMs } from './time';
+import { msToSeconds, secondsToMs } from './time';
 
 /** 未解鎖攤位的預設狀態（GDD §3 不變式 1）。 */
 function defaultStallState(): StallState {
@@ -289,7 +289,8 @@ export function createCore(config: BalanceConfig): NightMarketCore {
         capped = elapsedMs > capMs;
       }
 
-      const gained = (ratePerSec(state, effectiveMode) * creditedMs) / 1000;
+      // GDD §4.6：gained = rate(每秒) × creditedMs / 1000；換算只走 `time.ts`（§1 時間單位鐵則）。
+      const gained = ratePerSec(state, effectiveMode) * msToSeconds(creditedMs);
 
       return {
         state: { ...state, balance: state.balance + gained, lastSettledAt: now },
