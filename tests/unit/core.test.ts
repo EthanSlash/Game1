@@ -191,6 +191,15 @@ describe('snapshot（GDD §4.2、§4.3、§5.1）', () => {
     expect(snapshot.stalls.map((stall) => stall.id)).toEqual(BALANCE_CONFIG.stalls.map((def) => def.id));
     expect(snapshot.lastSettledAt).toBe(T0);
   });
+
+  it('state.stalls 缺少某個攤位 → 快照補預設值，不崩', () => {
+    const state = core.createInitialState(T0);
+    const snapshot = core.snapshot({ ...state, stalls: {} });
+
+    expect(snapshot.stalls).toHaveLength(BALANCE_CONFIG.stalls.length);
+    expect(snapshot.stalls[1]).toMatchObject({ unlocked: false, level: 0, incomePerSec: 0 });
+    expect(snapshot.incomePerSec).toBe(0);
+  });
 });
 
 describe('upgrade（GDD §4.4、§5）', () => {
