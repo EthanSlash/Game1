@@ -2,7 +2,7 @@
  * src/core 公開 API 契約（唯一版本，M1 實作與 M2 UI 都以此為準）。
  *
  * 這支檔案只有型別，沒有任何執行期程式碼與遊戲數值：
- * - 數值全部來自 `data/balance.json`，公式來自 `docs/GDD.md`（v1.0，2026-10-22 定案）。
+ * - 數值全部來自 `data/balance.json`，公式來自 `docs/GDD.md`（v1.1，2026-10-22 定案）。
  * - UI（M2）與黑箱驗收（MiniMax31）可以直接 import，不必等引擎實作。
  *
  * 硬規則（與 repo AGENTS.md 一致）：
@@ -78,12 +78,22 @@ export interface BalanceConfig {
     /** 離線收益上限（秒）。GDD v1.0 定案 14400（4 小時）。 */
     readonly capSeconds: number;
   };
+  /** 前景長空檔防護（GDD v1.1 §4.6）。 */
+  readonly foreground: {
+    /**
+     * 前景結算的最大合理間隔（秒）。`elapsedMs` 超過此值（分頁凍結、休眠、
+     * 時鐘前跳）時，這次結算改用 `'offline'` 規則（只計店員、套 `offline.capSeconds`）。
+     */
+    readonly maxGapSeconds: number;
+  };
   /** 存檔版本政策（GDD §8）。 */
   readonly save: {
     /** 本版程式寫出的存檔版本。 */
     readonly currentVersion: SaveVersion;
     /** 低於此版本的存檔視為 `unsupported-shape`。 */
     readonly minSupportedVersion: SaveVersion;
+    /** 前景定期存檔間隔（秒）；UI 的存檔時機鐵則見 GDD §6.1。 */
+    readonly foregroundIntervalSeconds: number;
   };
 }
 
@@ -185,7 +195,9 @@ export type ActionResult =
 
 /**
  * 結算模式：
- * - `foreground`：前景計時（不套離線上限）。計入「已雇店員**或**手動開賣中」的攤位（GDD §4.3）。
+ * - `foreground`：前景計時。計入「已雇店員**或**手動開賣中」的攤位（GDD §4.3）。
+ *   若 `elapsedMs > BalanceConfig.foreground.maxGapSeconds × 1000`，實作必須改用
+ *   `'offline'` 規則結算（只計店員、套 `offline.capSeconds`），見 GDD §4.6。
  * - `offline`：回到前景或冷啟動讀檔後結算（套 `BalanceConfig.offline.capSeconds`）。
  *   只計入「已雇店員」的攤位，手動開賣不計（GDD §4.3）。
  */
@@ -264,6 +276,8 @@ export interface NightMarketCore {
    * 時鐘倒退（`now < lastSettledAt`）時 `gained` 為 0、`elapsedMs` 為 0，
    * 且**不得扣錢**（怪獸8號 2026-10-22 補充：前景也要處理）；
    * `lastSettledAt` 對齊到 `now`（GDD §4.6）。
+   * `mode === 'foreground'` 且 `elapsedMs > foreground.maxGapSeconds × 1000` 時，
+   * **必須**改用 `'offline'` 規則結算（只計店員、套離線上限），GDD v1.1 §4.6。
    * 收益不取整，`balance` 為浮點（GDD §1）。
    */
   settle(state: GameState, now: TimestampMs, mode: SettleMode): SettleResult;
@@ -319,9 +333,12 @@ export interface GameEngine {
   init(now: TimestampMs, savedState: string | null): EngineFrame;
 
   /**
-   * 前景週期推進（結算到 `now`）；`offline` 恆為 null。
+   * 前景週期推進（結算到 `now`）。
    * `now` 比上次結算小時（時鐘倒退）→ 不給收益、也不扣錢
    * （怪獸8號 2026-10-22 補充；MiniMax31 可當邊界測試）。
+   * 距上次結算超過 `config.foreground.maxGapSeconds × 1000`（分頁凍結、休眠、
+   * 時鐘前跳）→ 這次改用 `'offline'` 規則結算（只計店員、套離線上限），
+   * `gained > 0` 時 `frame.offline` 有值，UI 據此跳彈窗（GDD v1.1 §4.6、§6）。
    * `onHidden` 之後、`onVisible` 之前的呼叫一律忽略（GDD §6，避免與離線結算重複計入）。
    */
   tick(now: TimestampMs): EngineFrame;
@@ -341,7 +358,9 @@ export interface GameEngine {
 
   /**
    * 序列化存檔字串；UI 原樣寫進 localStorage，不解析內容。
-   * 不涉及 I/O，所以沒有失敗態（寫入失敗由 UI 自己處理）。
+   * **呼叫時機是 UI 的硬規則**（`onHidden` 後立刻、動作成功後立刻、前景每
+   * `config.save.foregroundIntervalSeconds` 秒一次），見 GDD §6.1；
+   * core 只提供字串，不排程、不碰 I/O，所以沒有失敗態（寫入失敗由 UI 自己處理）。
    */
   save(now: TimestampMs): string;
 
