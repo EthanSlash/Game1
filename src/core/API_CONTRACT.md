@@ -1,8 +1,8 @@
 # src/core 公開 API 契約（v1.0 — 型別定案）
 
 狀態：**型別定案**（2026-10-22，怪獸8號核可 `src/core/api.ts` 即為定案版）。
-數值與公式仍等 MiMo26 的 `docs/GDD.md` + `data/balance.json`；
-GDD 若需要新參數，在同一支 PR 補欄位，不改既有語意。
+數值與公式已由 `docs/GDD.md` v1.0（2026-10-22 定案，原 MiMo26 改派 DeepSeek41）與
+`data/balance.json` 寫死；本文件與 GDD 衝突時以 GDD 為準。
 
 程式碼位置：`src/core/api.ts`（只有型別，沒有實作、沒有寫死任何遊戲數值），統一由 `src/core/index.ts` 匯出。
 UI 與測試**只** import `src/core`，不得自己再定義一份介面。
@@ -14,8 +14,8 @@ UI 與測試**只** import `src/core`，不得自己再定義一份介面。
 | `src/core/api.ts` | DeepSeek41 | 本文件描述的全部型別 |
 | `src/core/index.ts` | DeepSeek41 | 公開進入點；UI 與驗收測試只 import 這裡 |
 | `src/core/money.ts` | DeepSeek41 | `formatMoney`（9999 / 1萬 / 1億 / 1兆） |
-| `data/balance.json` | MiMo26 | 全部遊戲數值：攤位、成本曲線、里程碑、離線上限 |
-| `docs/GDD.md` | MiMo26 | 公式與規則，驗收測試的 oracle |
+| `data/balance.json` | DeepSeek41（原 MiMo26，2026-10-22 改派） | 全部遊戲數值：攤位、成本曲線、里程碑、離線上限 |
+| `docs/GDD.md` | DeepSeek41（原 MiMo26，2026-10-22 改派） | 公式與規則，驗收測試的 oracle（v1.0 定案） |
 
 core 不 import `src/ui`、不碰 DOM / `window` / `localStorage`，不呼叫 `Date.now()`。
 
@@ -129,12 +129,16 @@ settle(state, now, mode: 'foreground' | 'offline'): SettleResult
 | 離線 0 秒 | `gained: 0`、`elapsedMs: 0`、`offline` 為 null（不跳彈窗） |
 | 剛好到上限 | `capped: false`、`creditedMs == capSeconds * 1000` |
 | 超過上限 | `capped: true`、`creditedMs == capSeconds * 1000` |
-| 時鐘倒退（前景 `tick`） | `gained: 0`、`timeWentBackwards: true`、`balance` 不得變小 |
+| 時鐘倒退（前景 `tick`） | `gained: 0`、`timeWentBackwards: true`、`balance` 不得變小、`lastSettledAt` 對齊 `now` |
 | 時鐘倒退（回前景） | 同上，且不跳離線彈窗 |
-| 背景回來不重複 | 同一段時間連續兩次 `settle`，總入帳只等於一次 |
-| 里程碑 25/50/100 | `snapshot().stalls[i].incomePerSec` 在門檻前後符合 GDD 倍率 |
+| 背景回來不重複 | 同一段時間連續兩次 `settle`，總入帳只等於一次；`onHidden` 後的 `tick` 一律忽略 |
+| 手動開賣 vs 離線 | 只有 `selling`、沒有店員的攤位：前景有收益、離線結算為 0（GDD §4.3） |
+| 里程碑 25/50/100 | `snapshot().stalls[i].incomePerSec` 在門檻前後符合 GDD 倍率（累乘，Lv100 = ×8） |
 | 存檔損毀 | `load()` 回 `ok: false` 且 `reason` 為三者之一，不丟例外；`init` 開新局且 `loadError` 有值 |
-| 數字格式 | 一律用 `formatMoney`，不自己拼單位 |
+| 沒有存檔（`init(now, null)`） | 開新局、`loadError` 為 `null`（正常首啟，不算錯誤） |
+| 版本 0 存檔 | `load()` 回 `ok: true`、`migratedFrom: 0`（GDD §8.3） |
+| 數字格式 | 一律用 `formatMoney`，不自己拼單位（GDD §7） |
+| 金額比較 | 浮點容差 `|actual-expected| <= max(1e-6, |expected|*1e-9)`；成本與 `creditedMs` 用 `===` |
 
 ## 8. 對 GLM53幫手 契約提案（v1 → v2 → 定案版）的裁決
 
@@ -163,15 +167,20 @@ GLM53幫手 v2 已完整收下怪獸8號的 3 項拍板與 4 項必改（`now` �
 9. **`Snapshot` / `StallView` / `PLACEHOLDER_SNAPSHOT`（M0 佔位）已標 `@deprecated`**：
    `src/ui/app.ts` 換成 `GameSnapshot` 後由 DeepSeek41 刪除。
 
-## 9. 尚未定案、需要 GDD 決定
+## 9. 待 GDD 決定的事項 → 已由 GDD v1.0 定案（2026-10-22）
 
-1. **開賣語意**：手動開賣是否需要人在前景？無店員時手動顧攤有沒有收入？（契約已預留 `selling`／`toggleSell`）
-2. **等級起算**：`level: 0` 代表未解鎖，還是解鎖後就是 `level: 1`？（影響 `baseIncomePerSec` 基準）
-3. **無店員時的收入**：0，還是手動顧攤有基本收入？
-4. **里程碑倍率**：25 / 50 / 100 是累乘（2³）還是取最高一檔（×2）？
-5. **`maxLevel`**：MVP 有沒有上限？無上限時升級成本溢出的邊界怎麼處理。
-6. **時鐘倒退後 `lastSettledAt`**：見第 5 節。
-7. **`BalanceConfig` 是否需要更多參數**（例如店員收入倍率、里程碑是否也影響成本）。
-8. **金額取整**：`gained` 是否取整、取整是 floor 還是 round；`formatMoney` 的呈現門檻（9999／1萬）是否也要寫進 GDD。
+`docs/GDD.md` v1.0 已把下列 8 項全部寫死，本契約的描述與之一致：
 
-以上由 MiMo26 的 `docs/GDD.md` 定案，我照 GDD 實作；有異動會在同一支 PR 更新本文件。
+| 原本的待定項 | GDD 定案 | 契約／型別影響 |
+|---|---|---|
+| 開賣語意 | 手動營業開關，只算前景；離線只算有店員的攤位 | 無（`selling` / `toggleSell` 已預留） |
+| 等級起算 | 解鎖即 Lv1，未解鎖 Lv0 | 無 |
+| 無店員時收入 | 未開賣 0；手動開賣走同一條公式但不套 `clerkIncomeMultiplier` | 無 |
+| 里程碑倍率 | 累乘，25/50/100 各 ×2（Lv100 = ×8） | 無 |
+| `maxLevel` | 每攤 150；可達成本 ≤ 約 6e13，無精度風險 | `StallDefinition.maxLevel` 保留可為 null（未來無上限用） |
+| 時鐘倒退後 `lastSettledAt` | 對齊到 `now` | 已寫進 `settle` 註解 |
+| `BalanceConfig` 額外參數 | 新增 `startingBalance`、`incomeGrowthPerLevel`、`clerkIncomeMultiplier`、`save.{currentVersion,minSupportedVersion}` | 已補進 `api.ts` |
+| 金額取整 | 結算不取整（浮點）；只在顯示層 floor 後縮寫 | `gained` 維持「不承諾整數」 |
+
+GDD 另外定義了（本契約未涵蓋、實作照 GDD）：快照各 `can*` 欄位的判定、里程碑進度公式、
+存檔 v1 驗證表、v0 → v1 遷移、數字格式精確規則、平衡目標與模擬結果。

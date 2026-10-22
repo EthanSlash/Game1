@@ -2,7 +2,7 @@
  * src/core 公開 API 契約（唯一版本，M1 實作與 M2 UI 都以此為準）。
  *
  * 這支檔案只有型別，沒有任何執行期程式碼與遊戲數值：
- * - 數值全部來自 `data/balance.json`，公式來自 `docs/GDD.md`。
+ * - 數值全部來自 `data/balance.json`，公式來自 `docs/GDD.md`（v1.0，2026-10-22 定案）。
  * - UI（M2）與黑箱驗收（MiniMax31）可以直接 import，不必等引擎實作。
  *
  * 硬規則（與 repo AGENTS.md 一致）：
@@ -47,9 +47,9 @@ export interface StallDefinition {
   readonly emoji: string;
   /** 解鎖這個攤位需要的金額；首攤通常為 0（開局即解鎖）。 */
   readonly unlockCost: number;
-  /** 基準等級的每秒收入（等級起算由 GDD 定義）。 */
+  /** Lv1 的每秒收入（解鎖即 Lv1，見 GDD §3）。 */
   readonly baseIncomePerSec: number;
-  /** 升級成本的起點。 */
+  /** Lv1→Lv2 的升級成本基數（GDD §4.4 的成本公式起點）。 */
   readonly upgradeCostBase: number;
   /** 每升一級的成本成長倍率（GDD 的曲線參數）。 */
   readonly upgradeCostGrowth: number;
@@ -60,17 +60,30 @@ export interface StallDefinition {
 }
 
 /**
- * `data/balance.json` 的完整結構。
- * 草案：欄位由 GDD 定案後凍結；GDD 若需要新參數（例如店員收入倍率）在此補上。
+ * `data/balance.json` 的完整結構（欄位已依 GDD v1.0 凍結，見 `docs/GDD.md` §13）。
+ * 改欄位要同時改 `docs/GDD.md` §13 與 `src/core/API_CONTRACT.md`。
  */
 export interface BalanceConfig {
   readonly version: number;
+  /** 開新局時的起始餘額（全新遊戲、沒有存檔）。 */
+  readonly startingBalance: number;
+  /** 每升一級的收益成長倍率（全域；GDD §4.2）。 */
+  readonly incomeGrowthPerLevel: number;
+  /** 店員的效率加成倍率（每攤一位；GDD §4.2）。 */
+  readonly clerkIncomeMultiplier: number;
   readonly stalls: readonly StallDefinition[];
-  /** 由小到大排序。 */
+  /** 由小到大排序；倍率累乘（GDD §4.1）。 */
   readonly milestones: readonly MilestoneDefinition[];
   readonly offline: {
-    /** 離線收益上限（秒）。計畫 v0.1 為 4 小時。 */
+    /** 離線收益上限（秒）。GDD v1.0 定案 14400（4 小時）。 */
     readonly capSeconds: number;
+  };
+  /** 存檔版本政策（GDD §8）。 */
+  readonly save: {
+    /** 本版程式寫出的存檔版本。 */
+    readonly currentVersion: SaveVersion;
+    /** 低於此版本的存檔視為 `unsupported-shape`。 */
+    readonly minSupportedVersion: SaveVersion;
   };
 }
 
@@ -172,8 +185,9 @@ export type ActionResult =
 
 /**
  * 結算模式：
- * - `foreground`：前景計時（不套離線上限）。
+ * - `foreground`：前景計時（不套離線上限）。計入「已雇店員**或**手動開賣中」的攤位（GDD §4.3）。
  * - `offline`：回到前景或冷啟動讀檔後結算（套 `BalanceConfig.offline.capSeconds`）。
+ *   只計入「已雇店員」的攤位，手動開賣不計（GDD §4.3）。
  */
 export type SettleMode = 'foreground' | 'offline';
 
@@ -248,7 +262,9 @@ export interface NightMarketCore {
    * 結算收益到 `now`。
    * 必須是幂等的：同一個 `now` 呼叫兩次，第二次 `gained` 為 0。
    * 時鐘倒退（`now < lastSettledAt`）時 `gained` 為 0、`elapsedMs` 為 0，
-   * 且**不得扣錢**（怪獸8號 2026-10-22 補充：前景也要處理）。
+   * 且**不得扣錢**（怪獸8號 2026-10-22 補充：前景也要處理）；
+   * `lastSettledAt` 對齊到 `now`（GDD §4.6）。
+   * 收益不取整，`balance` 為浮點（GDD §1）。
    */
   settle(state: GameState, now: TimestampMs, mode: SettleMode): SettleResult;
 
@@ -306,6 +322,7 @@ export interface GameEngine {
    * 前景週期推進（結算到 `now`）；`offline` 恆為 null。
    * `now` 比上次結算小時（時鐘倒退）→ 不給收益、也不扣錢
    * （怪獸8號 2026-10-22 補充；MiniMax31 可當邊界測試）。
+   * `onHidden` 之後、`onVisible` 之前的呼叫一律忽略（GDD §6，避免與離線結算重複計入）。
    */
   tick(now: TimestampMs): EngineFrame;
 
