@@ -27,10 +27,12 @@ M2 UI 全部互動元素使用 `data-testid`，命名與攤位英文 id 同源�
 | `offline-cap-hint` | 「已達離線上限（4 小時）」提示 | `capped = true` 才顯示 | 上限文字由 `balance.json` 的 `offline.capSeconds` 組成 |
 | `offline-close` | 彈窗關閉鈕 | 彈窗內 | 關閉後不重複彈同一筆 |
 
-## smoke 測試依賴的 class（保留不動）
+## smoke 測試依賴的 class（相容用，M0 遺留）
 
-MiniMax31 既有 `tests/e2e/smoke.spec.ts` 依賴下列 M0 選擇器；M2 改版時保留：
+MiniMax31 既有 `tests/e2e/smoke.spec.ts` 依賴下列 M0 選擇器；保留**僅供相容**（MiniMax31 提案，2026-10-22 核准沿用）——`src/ui` 渲染這些 class 只是為了不讓 smoke 改版，不算公開樣式契約：
 
-- `.top__balance`（⚠️ M2 接上假引擎後文字改為實際餘額：`startingBalance = 0` → `0`，不再是 `1.23萬`；smoke 需更新）
-- `.stall`（數量 5）
-- `.stall--locked`（⚠️ 開局只有第一攤解鎖 → 數量 4，不是 3；smoke 需更新）
+- `.top__balance`（相容用；文字為實際餘額 `startingBalance = 0` → `0`）
+- `.stall`（相容用；數量 5）
+- `.stall--locked`（相容用；開局第一攤解鎖 → 數量 4）
+
+> **新測試（含改寫 smoke）一律走上表 `data-testid`，不要新增任何 class 依賴**；這三個 M0 class 未來可在 smoke 改用 testid 後移除。
