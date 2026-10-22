@@ -34,10 +34,12 @@ ipconfig
 > ⚠️ 需要**系統管理員權限**：在開始選單搜尋 PowerShell，按右鍵選「以系統管理員身分執行」。
 
 ```powershell
-New-NetFirewallRule -DisplayName "NightMarketKing LAN Preview 4173" -Direction Inbound -Protocol TCP -LocalPort 4173 -Action Allow -Profile Private
+New-NetFirewallRule -DisplayName "NightMarketKing LAN Preview 4173" -Direction Inbound -Protocol TCP -LocalPort 4173 -Action Allow -Profile Private,Domain
 ```
 
-說明：這條規則只在「私人網路」生效。如果 Windows 把你的 Wi-Fi 判定為「公用網路」，請到 設定 → 網路和網際網路 → Wi-Fi → 內容，把網路設定檔改成「私人」。
+說明：這條規則在「私人網路」和「網域網路」生效（公司網路通常是「網域」）。如果 Windows 把你的 Wi-Fi 判定為「公用網路」，請到 設定 → 網路和網際網路 → Wi-Fi → 內容，把網路設定檔改成「私人」。
+
+> ⚠️ 公司網路可能被群組原則禁止新增防火牆規則，或手機的 Wi-Fi 和電腦不在同一個網段。遇到這兩種情況，請改用電腦開的行動熱點，或手機 USB 連線。
 
 用完想移除規則：
 
