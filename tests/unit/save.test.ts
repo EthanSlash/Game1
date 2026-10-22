@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BALANCE_CONFIG, createCore } from '../../src/core';
-import type { GameState, LoadResult, NightMarketCore } from '../../src/core';
+import type { BalanceConfig, GameState, LoadResult, NightMarketCore } from '../../src/core';
 
 const T0 = 1_700_000_000_000;
 const core: NightMarketCore = createCore(BALANCE_CONFIG);
@@ -143,6 +143,30 @@ describe('load 失敗分支（GDD §8.2）', () => {
     expectLoadFailure(core.load(JSON.stringify(save)), 'unknown-version');
   });
 
+  it('版本低於 minSupportedVersion → unsupported-shape', () => {
+    const save = parsedSave();
+    save['version'] = BALANCE_CONFIG.save.minSupportedVersion - 1;
+    expectLoadFailure(core.load(JSON.stringify(save)), 'unsupported-shape');
+  });
+
+  it('介於 minSupportedVersion 與 currentVersion 之間、又沒有遷移函式 → unsupported-shape', () => {
+    // currentVersion = 2 的設定下，version 1 沒有對應的遷移（本版只有 v0 → v1）。
+    const futureConfig: BalanceConfig = {
+      ...BALANCE_CONFIG,
+      save: { ...BALANCE_CONFIG.save, currentVersion: 2, minSupportedVersion: 1 },
+    };
+    const futureCore = createCore(futureConfig);
+    const save = parsedSave();
+    save['version'] = 1;
+    expectLoadFailure(futureCore.load(JSON.stringify(save)), 'unsupported-shape');
+  });
+
+  it('state 是陣列 → unsupported-shape', () => {
+    const save = parsedSave();
+    save['state'] = [];
+    expectLoadFailure(core.load(JSON.stringify(save)), 'unsupported-shape');
+  });
+
   it('信封缺 savedAt / state → unsupported-shape', () => {
     const noSavedAt = parsedSave();
     delete noSavedAt['savedAt'];
@@ -233,6 +257,10 @@ describe('v0 → v1 遷移（GDD §8.3）', () => {
 
     const loaded = expectLoadOk(core.load(JSON.stringify(save)));
     expect(loaded.state.lastSettledAt).toBe(T0 + 5_000);
+  });
+
+  it('lastSavedAt 型別錯誤 → unsupported-shape', () => {
+    expectLoadFailure(core.load(v0Save({ lastSavedAt: 'yesterday' })), 'unsupported-shape');
   });
 
   it('v0 格式錯誤 → unsupported-shape，不丟例外', () => {
