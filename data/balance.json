@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "startingBalance": 0,
+  "incomeGrowthPerLevel": 1.1,
+  "clerkIncomeMultiplier": 1.25,
+  "milestones": [
+    { "level": 25, "multiplier": 2 },
+    { "level": 50, "multiplier": 2 },
+    { "level": 100, "multiplier": 2 }
+  ],
+  "offline": {
+    "capSeconds": 14400
+  },
+  "foreground": {
+    "maxGapSeconds": 60
+  },
+  "save": {
+    "currentVersion": 1,
+    "minSupportedVersion": 0,
+    "foregroundIntervalSeconds": 10
+  },
+  "stalls": [
+    {
+      "id": "chicken-steak",
+      "name": "雞排車",
+      "emoji": "🍗",
+      "unlockCost": 0,
+      "baseIncomePerSec": 1,
+      "upgradeCostBase": 10,
+      "upgradeCostGrowth": 1.25,
+      "hireCost": 150,
+      "maxLevel": 150
+    },
+    {
+      "id": "bubble-tea",
+      "name": "珍珠奶茶",
+      "emoji": "🧋",
+      "unlockCost": 400,
+      "baseIncomePerSec": 4,
+      "upgradeCostBase": 60,
+      "upgradeCostGrowth": 1.25,
+      "hireCost": 600,
+      "maxLevel": 150
+    },
+    {
+      "id": "oyster-omelette",
+      "name": "蚵仔煎",
+      "emoji": "🍳",
+      "unlockCost": 6000,
+      "baseIncomePerSec": 20,
+      "upgradeCostBase": 350,
+      "upgradeCostGrowth": 1.25,
+      "hireCost": 3500,
+      "maxLevel": 150
+    },
+    {
+      "id": "stinky-tofu",
+      "name": "臭豆腐",
+      "emoji": "🥘",
+      "unlockCost": 90000,
+      "baseIncomePerSec": 100,
+      "upgradeCostBase": 2200,
+      "upgradeCostGrowth": 1.25,
+      "hireCost": 22000,
+      "maxLevel": 150
+    },
+    {
+      "id": "sausage",
+      "name": "大腸包小腸",
+      "emoji": "🌭",
+      "unlockCost": 1200000,
+      "baseIncomePerSec": 500,
+      "upgradeCostBase": 14000,
+      "upgradeCostGrowth": 1.25,
+      "hireCost": 140000,
+      "maxLevel": 150
+    }
+  ]
+}
