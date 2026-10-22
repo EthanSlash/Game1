@@ -11,19 +11,23 @@
 export { formatMoney } from './money';
 
 /**
- * M1 公開 API 契約（型別草稿）：GameState / GameSnapshot / ActionResult / SettleResult /
- * SaveEnvelope / LoadResult / NightMarketCore。只有型別，沒有實作。
+ * 公開 API 契約（唯一版本）：純函式層 `NightMarketCore` 與 UI 門面 `GameEngine`。
+ * 只有型別，沒有實作；M1 在此補上 `createCore` / `createGameEngine` 的實作匯出。
  * 詳見 `src/core/API_CONTRACT.md`。
  */
-export type * from './contract';
+export type * from './api';
 
-/** 骨架期的唯讀畫面快照；M1 會由真正的 GameState 取代。 */
+/**
+ * 骨架期的唯讀畫面快照；M1 會由真正的 GameState 取代。
+ * @deprecated M2 改用 `GameSnapshot`；`src/ui/app.ts` 換掉後本型別與 `PLACEHOLDER_SNAPSHOT` 一起刪除。
+ */
 export interface Snapshot {
   readonly balance: number;
   readonly stalls: readonly StallView[];
   readonly clerkHired: boolean;
 }
 
+/** @deprecated 見 `Snapshot`。 */
 export interface StallView {
   readonly id: string;
   readonly name: string;
@@ -33,7 +37,10 @@ export interface StallView {
   readonly incomePerSec: number;
 }
 
-/** 骨架期假資料，讓 UI 可以先開工；M1 接上真實引擎後移除。 */
+/**
+ * 骨架期假資料，讓 UI 可以先開工；M1 接上真實引擎後移除。
+ * @deprecated 由 `GameEngine` 的假實作取代（M2）。
+ */
 export const PLACEHOLDER_SNAPSHOT: Snapshot = {
   balance: 12_345,
   clerkHired: false,
