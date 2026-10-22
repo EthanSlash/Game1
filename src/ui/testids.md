@@ -1,33 +1,36 @@
 # data-testid 命名表（M2）
 
-M2 UI 全部互動元素使用 `data-testid`，命名與 `src/core/api.ts` 契約的 `StallOps.id` 同源。
-MiniMax31 的 E2E 一律以 testid 定位（既有 smoke 測試依賴的 3 個 class 除外，見尾節）。
+M2 UI 全部互動元素使用 `data-testid`，命名與攤位英文 id 同源（契約 `StallSnapshot.id`，
+`data/balance.json` 的 `stalls[].id`，kebab-case）。MiniMax31 的 E2E 一律以 testid 定位
+（既有 smoke 測試依賴的 3 個 class 除外，見尾節）。
+
+按鈕一律以**快照的 `can*` 欄位**決定 disabled，與 `formatMoney` 金額文字並列顯示成本；
+動作以 `data-action`（`upgrade` / `hire` / `unlock` / `toggleSell` / `close-modal`）+
+`data-stall` 屬性觸發（E2E 不需要知道這兩個屬性，照 testid 點擊即可）。
 
 | testid | 元素 | 出現條件／狀態 | 備註 |
 |---|---|---|---|
 | `balance` | 頂欄金額 | 恆常 | 文字一律走 `src/core/formatMoney` |
-| `income-per-sec` | 頂欄每秒收益 | 恆常 | 同上 |
+| `income-per-sec` | 頂欄每秒收益 | 恆常 | 前景速率（GDD §4.3），同上 |
 | `stall-<id>` | 攤位卡容器 | 恆常 | 鎖住時另加 `data-locked="true"` |
 | `name-<id>` | 攤位名稱 | 恆常 | |
 | `level-<id>` | 等級顯示 `Lv.N` | 解鎖後 | |
-| `income-stall-<id>` | 該攤每秒收益 | 解鎖後 | |
-| `progress-<id>` | 里程碑進度條 | 解鎖後 | 相對下一個 25/50/100 |
-| `upgrade-<id>` | 升級鈕 | 解鎖後 | 錢不夠 → disabled，仍顯示成本 |
-| `hire-<id>` | 雇店員鈕 | 解鎖後、未雇用（每攤一位） | 已雇用 → 隱藏或顯示已雇狀態 |
-| `unlock-<id>` | 解鎖鈕 | 鎖住時 | 錢不夠 → disabled |
-| `sell-<id>` | 開賣鈕 | 解鎖後 | 語意待 GDD（契約 `toggleSell`） |
-| `offline-modal` | 離線收益彈窗容器 | 收益 > 0 才顯示（含冷啟動）；收益 0 不跳 | 靜態骨架期永遠 `hidden` |
-| `offline-amount` | 離線實得金額 | 彈窗內 | 只顯示 engine 結果，UI 不重算 |
-| `offline-duration` | 離線計入時長 | 彈窗內 | 已套上限的秒數 |
-| `offline-cap-hint` | 「已達 4 小時上限」提示 | `capped = true` 才顯示 | 上限值以 GDD 為準 |
-| `offline-close` | 彈窗關閉鈕 | 彈窗內 | |
-
-`<id>` 一律使用攤位英文 id（如 `chicken-steak`），kebab-case，與 `PLACEHOLDER_SNAPSHOT.stalls[].id` 一致。
+| `income-stall-<id>` | 該攤每秒收益 | 解鎖後 | `+0/秒` 未開賣且無店員時也顯示（GDD §5.1） |
+| `progress-<id>` | 里程碑進度條 | 解鎖後 | 依快照 `nextMilestone.progress`（Lv25 後歸 0 往 50 算）；`nextMilestone = null` 時滿格 |
+| `upgrade-<id>` | 升級鈕 | 解鎖後 | 文案 `升級 <成本>`；達上限後改「已達上限」、`upgradeCost = null` |
+| `hire-<id>` | 雇店員鈕 | 解鎖後、`!clerkHired` | 文案 `雇店員 <成本>`；雇用後**隱藏**（每攤一位） |
+| `unlock-<id>` | 解鎖鈕 | 鎖住時 | 文案 `解鎖 <成本>`；錢不夠或鏈上前提未滿 → disabled |
+| `sell-<id>` | 開賣／收攤鈕 | 解鎖後、`!clerkHired` | 文案依 `selling`：`開賣` / `收攤`；雇用店員後**隱藏**（`canToggleSell = false`，GDD §5） |
+| `offline-modal` | 離線收益彈窗容器 | 引擎 `frame.offline` 有值才顯示（冷啟動 `init`、`onVisible`、長空檔 `tick`；GDD §6） | `gained = 0`（含 0 秒、時鐘倒退）不跳 |
+| `offline-amount` | 離線實得金額 | 彈窗內 | 只顯示引擎結算值，UI 不重算 |
+| `offline-duration` | 離線計入時長 | 彈窗內 | 已套上限的 `creditedMs` |
+| `offline-cap-hint` | 「已達離線上限（4 小時）」提示 | `capped = true` 才顯示 | 上限文字由 `balance.json` 的 `offline.capSeconds` 組成 |
+| `offline-close` | 彈窗關閉鈕 | 彈窗內 | 關閉後不重複彈同一筆 |
 
 ## smoke 測試依賴的 class（保留不動）
 
-MiniMax31 既有 `tests/e2e/smoke.spec.ts` 依賴下列 M0 選擇器；M2 改版時保留，不新選中它們以外的新 class 定位：
+MiniMax31 既有 `tests/e2e/smoke.spec.ts` 依賴下列 M0 選擇器；M2 改版時保留：
 
-- `.top__balance`（文字須正好 `1.23萬`：假資料餘額 12345）
+- `.top__balance`（⚠️ M2 接上假引擎後文字改為實際餘額：`startingBalance = 0` → `0`，不再是 `1.23萬`；smoke 需更新）
 - `.stall`（數量 5）
-- `.stall--locked`（數量 3）
+- `.stall--locked`（⚠️ 開局只有第一攤解鎖 → 數量 4，不是 3；smoke 需更新）
