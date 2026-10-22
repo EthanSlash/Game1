@@ -1,10 +1,9 @@
-import balanceJson from '../../data/balance.json';
+import { BALANCE_CONFIG, createGameEngine } from '../core';
 import { renderApp } from './app';
-import { createFakeEngine } from './engine';
-import type { BalanceConfig, EngineFrame, GameSnapshot, OfflineSettlement, TimestampMs } from '../core';
+import type { EngineFrame, GameSnapshot, OfflineSettlement, TimestampMs } from '../core';
 
 /**
- * M2 store — `GameEngine` 門面（目前是假引擎，M1 上線後改 `createGameEngine`）
+ * M2 store — `GameEngine` 門面（M1 真引擎，`createGameEngine`）
  * 與 DOM 之間的唯一接線，職責：
  *
  * - `init` 讀檔冷啟動：`loadError` 只 console 警告（GDD：不彈錯誤、不崩）；
@@ -12,21 +11,19 @@ import type { BalanceConfig, EngineFrame, GameSnapshot, OfflineSettlement, Times
  * - 每 250ms `tick`（GDD §6 建議節奏）；結算是連續時間制，tick 間距不影響金額。
  * - 存檔時機（GDD §6.1 UI 硬規則）：
  *   ①`onHidden` 之後立刻存（同一個 `now`）；②每次動作成功後立刻存；
- *   ③前景每 `save.foregroundIntervalSeconds` 秒定期存。`init` 後不強制。
+ *   ③前景每 `save.foregroundIntervalSeconds` 秒定期存（僅前景，hidden 期間跳過）。`init` 後不強制。
  *   UI 只把 `engine.save()` 的字串原樣寫進**單一** localStorage key，不解析；
  *   寫入失敗吞掉例外、僅 console 警告。
  */
-const CONFIG: BalanceConfig = balanceJson;
-
 /** 畫面 tick 節奏（毫秒）。結算不吃這個值，只影響更新頻率。 */
 const TICK_MS = 250;
 /** 秒 → 毫秒（repo 唯一允許的秒↔毫秒轉換處之一，GDD §1）。 */
-const SAVE_INTERVAL_MS = CONFIG.save.foregroundIntervalSeconds * 1000;
+const SAVE_INTERVAL_MS = BALANCE_CONFIG.save.foregroundIntervalSeconds * 1000;
 /** GDD §6.1：單一 localStorage key，名稱由 UI 決定。 */
 const SAVE_KEY = 'night-market-king-save';
 
 export function start(root: HTMLElement): void {
-  const engine = createFakeEngine();
+  const engine = createGameEngine(BALANCE_CONFIG);
   let snapshot: GameSnapshot = engine.state();
   let modalOffline: OfflineSettlement | null = null;
   let lastSaveAt = Date.now();
@@ -98,6 +95,10 @@ export function start(root: HTMLElement): void {
 
   /* ---- 前景 loop：tick + 定期存檔 ---- */
   setInterval(() => {
+    // 文件 hidden 時整段跳過：引擎 §6 本來就忽略背景 tick（不結算、不改狀態），
+    // 定期存檔也只在背景前後重寫同一份內容；唯一該存的時機（onHidden 後立刻存）
+    // 由下一層 visibilitychange 處理（§6.1）。
+    if (document.hidden) return;
     const now = Date.now();
     applyFrame(engine.tick(now));
     if (now - lastSaveAt >= SAVE_INTERVAL_MS) persistSave(now);
