@@ -232,7 +232,7 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 |---|---|
 | `init(now, savedState)` | `savedState === null` → 直接開新局（`lastSettledAt = now`、`loadError = null`）。有字串 → `load(savedState)`：成功就用存檔開局；失敗則開新局並把原因放 `loadError`（`corrupt` / `unknown-version` / `unsupported-shape`），**不彈錯誤、不崩**。之後立刻 `settle(now, 'offline')`：`gained > 0` 才把 `offline` 填進 `EngineFrame`。 |
 | `tick(now)` | 前景推進：`settle(now, 'foreground')`。若 `elapsedMs > maxGapMs`（§4.6 長空檔），這次自動改用離線規則結算，`gained > 0` 時填入 `frame.offline` 讓 UI 跳彈窗；其餘情況 `offline = null`。**在 `onHidden` 之後、`onVisible` 之前呼叫 `tick` 一律忽略**（不結算、不改狀態），避免背景 timer 與離線結算重複計入。 |
-| `onHidden(now)` | 先 `settle(now, 'foreground')` 把前景收益結清（長空檔同樣走 §4.6 自動轉離線），再標記 `hidden = true`。回傳 `void`，這種入帳**不跳彈窗**（見下方邊界說明）。 |
+| `onHidden(now)` | 先 `settle(now, 'foreground')` 把前景收益結清（長空檔同樣走 §4.6 自動轉離線），再標記 `hidden = true`。回傳 `void`，這種入帳**不跳彈窗**（見下方邊界說明）。**重複呼叫（v1.2）**：已在 `hidden` 狀態時再呼叫一律忽略——不結算、不改狀態，直到 `onVisible` 為止。`visibilitychange` 與 `pagehide` 常同時觸發；第二次若又走前景規則，會把手動開賣的攤位當成「人在顧攤」入帳，違反 §2／§4.3。 |
 | `onVisible(now)` | 標記 `hidden = false`，`settle(now, 'offline')`；`gained > 0` 才回 `offline`（含 `creditedMs`、`capped`、`timeWentBackwards`）。 |
 | `save(now)` | **只序列化**（`savedAt = now`），不結算。回傳字串，UI 原樣寫 `localStorage`。 |
 | `state()` | 回目前 `GameSnapshot`。 |
@@ -311,7 +311,7 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 }
 ```
 
-- `version` = 信封版本，`state.saveVersion` 必須與它相同。
+- `version` = 信封版本（v1.2：**驗證與遷移只認這一層**）。`state.saveVersion` 只是序列化時寫下的冗餘欄位：讀檔不檢查，缺失或與信封 `version` 不一致都不算損毀；讀檔成功後一律改寫成 `currentVersion`。
 - 上面範例只列 2 個攤位示意；實際序列化要寫 `balance.json` 的**全部**攤位（未解鎖也寫，值為 0/false）。
 - `savedAt` 只是「最後一次存檔時間」的顯示用資訊，**不是**收益水位線；收益只認 `state.lastSettledAt`。
 - 序列化時 `stalls` 必須包含 `balance.json` 的全部攤位（未解鎖也要寫，值為 0/false）。
@@ -327,6 +327,8 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 | `version` 比程式支援的新（> 1） | `reason: 'unknown-version'` |
 | `version` 不是 0 或 1（含負數、非整數） | `reason: 'unsupported-shape'` |
 | 攤位條目缺欄位、型別錯、`level` 非整數或 < 0 | `reason: 'unsupported-shape'` |
+| 攤位已解鎖（`unlocked = true`）但 `level = 0`（v1.2） | **不算錯**：讀檔正規化成 Lv1（守住 §3 不變式 2）。未解鎖的攤位則一律正規化成 `level 0, clerkHired false, selling false`。 |
+| `state.saveVersion` 缺失、或與信封 `version` 不一致（v1.2） | **不算損毀**：內層 `saveVersion` 不檢查，一律以信封 `version` 為準；讀檔成功後改寫成 `currentVersion`。 |
 | `balance` 非有限數或 < 0 | `reason: 'unsupported-shape'` |
 | 存檔缺少 `balance.json` 定義的某個攤位 | **不算錯**：補預設值（`level 0, unlocked false, clerkHired false, selling false`） |
 | 存檔出現 `balance.json` 沒有的攤位 id | **不算錯**：忽略該筆 |
@@ -390,8 +392,11 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 | D3 | 缺必要欄位 | 不丟例外；`reason = 'unsupported-shape'`；門面開新局 |
 | D4 | 版本 0 存檔 | 依 §8.3 遷移，`migratedFrom = 0`，數值正確 |
 | D5 | 未知更高版本 | `reason = 'unknown-version'`，不崩、不覆寫 |
+| D6 | 已解鎖但 `level = 0`（v1.2） | 讀檔正規化成 Lv1，不算損毀 |
+| D7 | 信封與內層版本不一致（v1.2） | 以信封 `version` 為準、不檢查 `state.saveVersion`；讀檔後改寫成 `currentVersion` |
 | E1 | 背景不重複算 | `tick(t1)` → `onHidden(t1)` → `onVisible(t2)`：總收益只等於 `[t0, t1]` 前景 + `[t1, t2]` 離線 |
 | E2 | 連續兩次 `onVisible` | 第二次 `gained === 0` |
+| E3 | 重複 `onHidden`（v1.2） | 已在 hidden 時再呼叫 `onHidden` 不結算、不改狀態；回到 `onVisible` 後仍結算完整背景區間，不被截短 |
 | F1–F5 | 數字格式 | 依 §7 表 |
 | G1–G8 | E2E | 依 `src/ui/testids.md`，金額一律 `formatMoney` |
 
@@ -453,7 +458,7 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 |---|---|---|
 | 2026-10-22 | 1.0 | 初版定案：公式、動作、離線、存檔 v1 + v0 遷移、數字格式、平衡目標。解決 `src/core/API_CONTRACT.md` §9 的 8 個待定項。 |
 | 2026-10-22 | 1.1 | 依 怪獸8號 01:50 審查修訂：①前景長空檔（> `foreground.maxGapSeconds`）自動改用離線規則結算並在 `tick` 帶出彈窗（§4.6、§6、§9 C6/C7）；②補存檔時機 UI 硬規則（§6.1）；③升級成本整數保證限定在 ≤ `MAX_SAFE_INTEGER`、A2 限定低等級（§4.4、§9）；④§10 模擬結果標示待 `tools/sim` 重現。`balance.json` 新增 `foreground.maxGapSeconds` 與 `save.foregroundIntervalSeconds`。 |
-| 2026-10-22 | 1.2 | `tools/sim` 落地（`npm run sim`）：§10「現值模擬」欄改用實測值並移除待重現標示。與 v1.1 草案差異 ≤ 12%（1 小時速率 383 → 429/秒、蚵仔煎 38.0 → 34.1 分、臭豆腐 84.1 分 → 1.32 小時），全部在 ±30% 容許範圍內，`balance.json` 未調整。 |
+| 2026-10-22 | 1.2 | `tools/sim` 落地（`npm run sim`）：§10「現值模擬」欄改用實測值並移除待重現標示。與 v1.1 草案差異 ≤ 12%（1 小時速率 383 → 429/秒、蚵仔煎 38.0 → 34.1 分、臭豆腐 84.1 分 → 1.32 小時），全部在 ±30% 容許範圍內，`balance.json` 未調整。同時補三個規格空白（怪獸8號 2026-10-22 裁決）：①§6 重複 `onHidden` 只結算第一次，`onVisible` 之前再呼叫一律忽略；②§8.2 已解鎖但 `level = 0` 讀檔正規化成 Lv1，不算損毀；③§8.1／§8.2 版本以外層信封 `version` 為準、內層 `state.saveVersion` 不檢查、讀檔後改寫成 `currentVersion`。§9 補對應驗收列 E3／D6／D7。 |
 
 已解決的待定項（原 `API_CONTRACT.md` §9）：
 

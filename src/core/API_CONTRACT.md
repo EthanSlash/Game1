@@ -159,7 +159,7 @@ GLM53幫手 v2 已完整收下怪獸8號的 3 項拍板與 4 項必改（`now` �
    再包一層 `UiEngineState`。
 2. **`UiEngineState` / `StallOps` 取消**：攤位卡需要的欄位全部併進 `GameSnapshot`。一個畫面只讀一份結構，
    不必同時維護 `snapshot` 與 `ops` 兩份排序一致的問題。另 v2 的 `UiEngineState.snapshot` 型別是
-   `Snapshot`（M0 佔位，已 `@deprecated`），定案版改成 `GameSnapshot`，佔位型別不用進契約。
+   `Snapshot`（M0 佔位，已於 M1 刪除），定案版改成 `GameSnapshot`，佔位型別不用進契約。
 3. **`amount` 不承諾整數**：改名 `gained: number`，取整規則與上限交 GDD；放置類金額會超過
    `Number.MAX_SAFE_INTEGER` 的量級，契約先不綁死。
 4. **`elapsedSec` 改 `creditedMs`**：全 repo 執行期時間單位統一毫秒（`TimestampMs`），避免秒／毫秒混用。
@@ -168,8 +168,8 @@ GLM53幫手 v2 已完整收下怪獸8號的 3 項拍板與 4 項必改（`now` �
 6. **`tick` / `onVisible` 回 `EngineFrame`**：附帶最新快照，UI 不必再 `state()` 取一次。
 7. **動作回 `boolean`**（怪獸8號定案）：失敗原因 `ActionFailure` 留在純函式層給測試用，門面只回真假。
 8. **`save` 回字串**：UI 原樣寫 localStorage，寫入失敗由 UI 處理；core 不碰 I/O。
-9. **`Snapshot` / `StallView` / `PLACEHOLDER_SNAPSHOT`（M0 佔位）已標 `@deprecated`**：
-   `src/ui/app.ts` 換成 `GameSnapshot` 後由 DeepSeek41 刪除。
+9. **`Snapshot` / `StallView` / `PLACEHOLDER_SNAPSHOT`（M0 佔位）已刪除（M1 `26c7777`）**：
+   `src/ui/app.ts` 早已改用 `GameSnapshot`，M2 落地後全樹再無引用，DeepSeek41 在 M1 移除這三個型別。本契約不再提供這三個型別，新程式碼請用 `GameSnapshot` / `StallSnapshot`。
 
 ## 9. 待 GDD 決定的事項 → 已由 GDD v1.0 定案（2026-10-22）
 
