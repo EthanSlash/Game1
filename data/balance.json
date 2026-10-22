@@ -11,9 +11,13 @@
   "offline": {
     "capSeconds": 14400
   },
+  "foreground": {
+    "maxGapSeconds": 60
+  },
   "save": {
     "currentVersion": 1,
-    "minSupportedVersion": 0
+    "minSupportedVersion": 0,
+    "foregroundIntervalSeconds": 10
   },
   "stalls": [
     {
