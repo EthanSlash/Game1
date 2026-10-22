@@ -143,7 +143,9 @@ export interface StallSnapshot {
   readonly selling: boolean;
   /** 解鎖所需金額；已解鎖為 null。 */
   readonly unlockCost: number | null;
-  /** 升級所需金額；已達等級上限為 null。 */
+  /**
+   * 升級所需金額；未解鎖或已達等級上限為 null（GDD §5.1）。
+   */
   readonly upgradeCost: number | null;
   /** 雇用店員所需金額；已雇用或不可雇用為 null。 */
   readonly hireCost: number | null;
@@ -160,7 +162,7 @@ export interface StallSnapshot {
 /** 整頁畫面資料。UI 只讀這個結構，不讀 GameState。 */
 export interface GameSnapshot {
   readonly balance: number;
-  /** 全部攤位加總的每秒收入。 */
+  /** 全部攤位加總的**前景**每秒收入（畫面上正在跳的數字，GDD §4.3）。 */
   readonly incomePerSec: number;
   /** 是否至少有一個攤位雇用店員（顯示「店員顧攤中 / 自己顧攤」）。 */
   readonly anyClerkHired: boolean;
@@ -267,7 +269,10 @@ export interface NightMarketCore {
   /** 解鎖新攤位。 */
   unlock(state: GameState, stallId: StallId): ActionResult;
 
-  /** 切換開賣／收攤（`sell-<id>`）；語意依 GDD，這裡只保證失敗時狀態不變。 */
+  /**
+   * 切換開賣／收攤（`sell-<id>`）。語意見 GDD §5：手動營業開關，只影響前景收益，
+   * 離線不計入；已雇用店員時回 `false`、狀態不變。失敗時 `state` 與傳入同參考。
+   */
   toggleSell(state: GameState, stallId: StallId): ActionResult;
 
   /**
@@ -321,8 +326,10 @@ export interface EngineFrame {
  * - 所有 `now` 參數都是**毫秒**（`Date.now()`）。
  * - 動作（upgrade／hire／unlock／toggleSell）內部先結算到 `now` 再執行，
  *   UI 不需要也不可以先自己算 delta（怪獸8號審查第 3 點）。
- * - 動作失敗一律回 `false` 且**任何狀態都不變**，不丟例外
- *   （怪獸8號 2026-10-22 定案；失敗原因要診斷請用純函式層的 `ActionResult`）。
+ * - 動作失敗一律回 `false`、不丟例外。**動作本身不改任何狀態**；但動作前的
+ *   結算照常入帳（GDD §5：同一個 `now` 時 delta 為 0，`lastSettledAt` 已因結算前進），
+ *   所以「狀態完全不變」只保證動作部分，不保證 `balance` / `lastSettledAt` 沒動
+ *   （怪獸8號 2026-10-22 定案；要斷言「失敗不動狀態」請用純函式層的 `ActionResult`）。
  */
 export interface GameEngine {
   /**
@@ -343,17 +350,30 @@ export interface GameEngine {
    */
   tick(now: TimestampMs): EngineFrame;
 
-  /** 進背景：停止推進並記錄時間點（結算時機由實作決定）。 */
+  /**
+   * 進背景：先 `settle(now, 'foreground')` 把前景收益結清（長空檔依 GDD §4.6
+   * 自動改用離線規則），再標記 hidden。回傳 `void`，這種入帳只入帳、不帶 frame
+   * （不跳彈窗；彈窗只由 `init` / `tick` / `onVisible` 帶出）。見 GDD §6。
+   */
   onHidden(now: TimestampMs): void;
 
   /** 回前景：結算離線收益（含 4h 上限與時鐘倒退規則）；入帳為 0 時 `offline` 為 null。 */
   onVisible(now: TimestampMs): EngineFrame;
 
-  /** 以下動作成功回 `true`；錢不夠或不被允許時回 `false` 且狀態完全不變。 */
+  /** 升級單一攤位。成功回 `true`；失敗時回 `false`，動作本身不改任何狀態（動作前結算照常，GDD §5）。 */
   upgrade(stallId: StallId, now: TimestampMs): boolean;
+
+  /** 雇用店員（每攤一位）。成功回 `true`；失敗時回 `false`，動作本身不改任何狀態（動作前結算照常，GDD §5）。 */
   hire(stallId: StallId, now: TimestampMs): boolean;
+
+  /** 解鎖新攤位。成功回 `true`；失敗時回 `false`，動作本身不改任何狀態（動作前結算照常，GDD §5）。 */
   unlock(stallId: StallId, now: TimestampMs): boolean;
-  /** 開賣／收攤。名稱固定；「開賣」的收益語意等 GDD 定案。 */
+
+  /**
+   * 開賣／收攤。語意依 GDD §5：手動營業開關，**只影響前景收益**，離線不計入；
+   * 已雇用店員的攤位不再需要手動開賣 → 回 `false`、動作本身不改狀態
+   * （`canToggleSell = false`）。動作前的結算照常。
+   */
   toggleSell(stallId: StallId, now: TimestampMs): boolean;
 
   /**
