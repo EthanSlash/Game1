@@ -30,4 +30,4 @@ MiniMax31 既有 `tests/e2e/smoke.spec.ts` 依賴下列 M0 選擇器；M2 改版
 
 - `.top__balance`（文字須正好 `1.23萬`：假資料餘額 12345）
 - `.stall`（數量 5）
-- `.stall--locked`(數量 3)
+- `.stall--locked`（數量 3）
