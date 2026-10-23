@@ -45,8 +45,8 @@ export function start(root: HTMLElement): void {
     }
   }
 
-  function render(): void {
-    renderApp(root, snapshot, modalOffline);
+  function render(feedbackStallId: string | null = null): void {
+    renderApp(root, snapshot, modalOffline, feedbackStallId);
   }
 
   /** 離線彈窗：`gained > 0` 才顯示（GDD §6：收益 0 不跳，由引擎保證 offline 為 null）。 */
@@ -66,7 +66,7 @@ export function start(root: HTMLElement): void {
   /* ---- 冷啟動 ---- */
   applyFrame(engine.init(Date.now(), readSavedState()));
 
-  /* ---- 動作（事件委派：innerHTML 每次重畫，listener 掛在 root 上不受影響） ---- */
+  /* ---- 動作（事件委派：listener 掛在 root 上，結構就地更新不受委派影響） ---- */
   const ACTIONS = ['upgrade', 'hire', 'unlock', 'toggleSell'] as const;
   type ActionName = (typeof ACTIONS)[number];
   const isAction = (value: string): value is ActionName =>
@@ -86,11 +86,13 @@ export function start(root: HTMLElement): void {
     if (!isAction(action) || stallId === undefined) return;
 
     // 門面動作內部先結算（GDD §5）；成功後立刻存檔（§6.1，同一個 now）。
+    // 成功時把攤位 id 傳給 renderer 觸發一次回饋動畫（升級／雇用／解鎖，UX #4）；
+    // 開賣／收攤是狀態切換，狀態本來就會顯示，不另外閃卡。
     const now = Date.now();
     const ok = engine[action](stallId, now);
     if (ok) persistSave(now);
     snapshot = engine.state();
-    render();
+    render(ok && action !== 'toggleSell' ? stallId : null);
   });
 
   /* ---- 前景 loop：tick + 定期存檔 ---- */
