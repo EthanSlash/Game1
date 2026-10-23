@@ -9,8 +9,9 @@
 跑法：
 
 ```bash
-npm run e2e                      # 兩個裝置（iPhone 13 / Pixel 7）都跑
+npm run e2e                      # 三個 project（iPhone 13 / Pixel 7 / WebKit iPhone 13）都跑
 npx playwright test tests/e2e/gameplay.spec.ts --project=iphone-13
+npx playwright test --project=webkit-iphone-13   # 只跑 WebKit
 ```
 
 ---
