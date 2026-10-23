@@ -14,15 +14,14 @@
  * 2. **金額期望值一律從 `data/balance.json` + GDD 公式算出來**，顯示值一律經過
  *    `formatMoney`（GDD §7）。spec 裡不寫死任何金額。
  *
- * 3. **為什麼 `formatMoney` 從 `src/core/money` 匯入、不是 `src/core/index.ts`**：
- *    Playwright 的 ESM loader 要求 JSON import 帶 import attribute，而
- *    `src/core/index.ts` 裡的 `import balanceData from '../../data/balance.json'`
- *    沒有帶 → 從 index 匯入會在載入階段直接炸掉。`src/core/money.ts` 本身不 import
- *    JSON，所以單獨從它匯入 `formatMoney`（同一支實作、同樣的格式化規則）。
+ * 3. **`formatMoney` 從 `src/core`（公開進入點）匯入**：
+ *    `src/core/index.ts` 的 JSON import 已帶 import attribute（`with { type: 'json' }`），
+ *    所以 Playwright 的 ESM loader 載入 index 不會炸掉；測試只透過公開進入點取用，
+ *    不直接碰 `src/core/money` 這種內部檔案。
  */
 import type { Page } from '@playwright/test';
 import balanceJson from '../../data/balance.json' with { type: 'json' };
-import { formatMoney } from '../../src/core/money';
+import { formatMoney } from '../../src/core';
 
 /** `data/balance.json` 的內容（唯一的遊戲數值來源，GDD §13）。 */
 export const BALANCE = balanceJson;
