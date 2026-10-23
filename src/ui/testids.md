@@ -21,7 +21,10 @@ M2 UI 全部互動元素使用 `data-testid`，命名與攤位英文 id 同源�
 | `progress-label-<id>` | 里程碑標籤 `→ Lv25 收益 ×2` | 解鎖後、`nextMilestone != null` | 數值直接讀 `snapshot.nextMilestone`，`null` 時隱藏 |
 | `upgrade-<id>` | 升級鈕 | 解鎖後 | 文案 `升級 <成本>`；達上限後改「已達上限」、`upgradeCost = null` |
 | `hire-<id>` | 雇店員鈕 | 解鎖後、`!clerkHired` | 文案 `雇店員 <成本>`；雇用後**隱藏**（每攤一位） |
-| `hire-hint-<id>` | 雇店員說明小字（`hire-<id>` 下方） | 解鎖後、`!clerkHired` | 固定文案「雇店員後自動營業、離線也會賺，開賣鈕會移除」；收益預覽數字待第 2 批（core 的 `incomePerSecIfHired`） |
+| `hire-hint-<id>` | 雇店員說明小字（`hire-<id>` 下方） | 解鎖後、`!clerkHired` | 固定文案「雇店員後自動營業、離線也會賺，開賣鈕會移除」；後接「，雇用後 +X/秒」（讀快照 `incomePerSecIfHired`，`null` 時不顯示該段） |
+| `shortfall-unlock-<id>` | 解鎖鈕下方的還差金額 | `shortfall.unlock > 0` | 文案 `還差 X`（同 `formatMoney`，UX #3）；`0`（錢夠）或 `null`（鏈上前提未滿）時 hidden |
+| `shortfall-upgrade-<id>` | 升級鈕下方的還差金額 | `shortfall.upgrade > 0` | 同上；`null` 含「未解鎖／已達上限」 |
+| `shortfall-hire-<id>` | 雇店員鈕下方的還差金額 | `shortfall.hire > 0` | 同上；`null` 含「未解鎖／已雇用」；已雇用的卡不含此元素 |
 | `unlock-<id>` | 解鎖鈕 | 鎖住時 | 文案 `解鎖 <成本>`；錢不夠或鏈上前提未滿 → disabled；`canUnlock = true` 時加 `btn--ready` 強調 |
 | `sell-<id>` | 開賣／收攤鈕 | 解鎖後、`!clerkHired` | 文案依 `selling`：`開賣` / `收攤`；雇用店員後**隱藏**（`canToggleSell = false`，GDD §5）；開局引導成立時加 `btn--glow` 發光 |
 | `onboarding-hint` | 開局引導提示行（頂欄下方） | `balance === 0` 且無任何攤位開賣、無店員 | 文案「按『開賣』開始賺錢」；條件不成立自動隱藏 |

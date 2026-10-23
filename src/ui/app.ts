@@ -14,7 +14,12 @@ import type { BalanceConfig, GameSnapshot, OfflineSettlement, StallSnapshot, Tim
  *   （`stall--flash` / `pop-num`，由 store 傳入 feedbackStallId 觸發一次）。
  *   動畫能存活的前提就是本檔不再整頁重建 DOM。
  * - #5 進度條標籤：`→ Lv25 收益 ×2`，數值直接讀 `stall.nextMilestone`。
- * - #6＋#7 店員說明：`hire-<id>` 下方加固定說明文字（收益預覽數字在第 2 批）。
+ * - #6＋#7 店員說明：`hire-<id>` 下方加固定說明文字；第 2 批接上預覽數字
+ *   （「，雇用後 +X/秒」，讀快照 `incomePerSecIfHired`，`null` 時隱藏）。
+ * - 第 2 批（UX #3）：還差多少錢。`upgrade-*`／`hire-*`／`unlock-*` 按鈕下方各加
+ *   `shortfall-<動作>-<id>`，只在 `shortfall.<動作> > 0`（錢不夠）時顯示「還差 X」
+ *   （`formatMoney`）；`0`（錢夠）或 `null`（不可行，原因不是錢）一律隱藏。
+ *   數值、可行性全部讀快照，UI 不自己計算。
  * - #10 鎖定攤位對比：改用色彩調低、不再疊乘透明度；錢夠時 `unlock-<id>` 加
  *   `btn--ready` 明顯強調。
  * - #12 離線彈窗上限提示改寫，小時數由 `balance.json` 組出。
@@ -38,6 +43,21 @@ const HIRE_HINT_TEXT = '雇店員後自動營業、離線也會賺，開賣鈕�
 
 /** 開局引導文案（UX #1）。 */
 const ONBOARDING_TEXT = '按「開賣」開始賺錢';
+
+/**
+ * UX #3：還差多少錢（`shortfall-<動作>-<id>`）。
+ * `> 0`（錢不夠）→ 顯示；`0`（錢夠）與 `null`（動作不可行，原因不是錢，GDD §5.1）
+ * 一律隱藏。`el` 可以不在（`unlocked-clerk` 沒有 `shortfall-hire`）。
+ */
+function setShortfall(el: HTMLElement | null, value: number | null): void {
+  if (el === null) return;
+  if (value === null || value <= 0) {
+    el.hidden = true;
+    return;
+  }
+  setText(el, `還差 ${formatMoney(value)}`);
+  el.hidden = false;
+}
 
 /** creditedMs（毫秒）轉人讀時長：`N 分 M 秒` / `N 小時 M 分 S 秒` / `N 秒`。 */
 function formatDuration(ms: TimestampMs): string {
@@ -92,17 +112,19 @@ function unlockedCardHtml(stall: StallSnapshot): string {
     stall.upgradeCost === null ? '已達上限' : `升級 ${formatMoney(stall.upgradeCost)}`;
   const parts: string[] = [
     `<button class="btn" data-testid="upgrade-${stall.id}" data-action="upgrade" data-stall="${stall.id}" ${stall.canUpgrade ? '' : 'disabled'}>${upgradeLabel}</button>`,
+    `<span class="stall__shortfall" data-testid="shortfall-upgrade-${stall.id}" hidden></span>`,
   ];
   if (!stall.clerkHired) {
     parts.push(
       `<button class="btn" data-testid="hire-${stall.id}" data-action="hire" data-stall="${stall.id}" ${stall.canHire ? '' : 'disabled'}>雇店員 ${formatMoney(stall.hireCost ?? 0)}</button>`,
+      `<span class="stall__shortfall" data-testid="shortfall-hire-${stall.id}" hidden></span>`,
       `<button class="btn btn--sell" data-testid="sell-${stall.id}" data-action="toggleSell" data-stall="${stall.id}">${stall.selling ? '收攤' : '開賣'}</button>`,
     );
   }
   const actions = `<div class="stall__actions">${parts.join('')}</div>`;
   const hireHint = stall.clerkHired
     ? ''
-    : `<p class="stall__hire-hint" data-testid="hire-hint-${stall.id}">${HIRE_HINT_TEXT}</p>`;
+    : `<p class="stall__hire-hint" data-testid="hire-hint-${stall.id}">${HIRE_HINT_TEXT}<span class="stall__hire-hint-income" hidden></span></p>`;
   const milestone = stall.nextMilestone;
   const progressLabel = `<span class="stall__progress-label" data-testid="progress-label-${stall.id}" ${milestone === null ? 'hidden' : ''}>${milestone === null ? '' : `→ Lv${milestone.level} 收益 ×${milestone.multiplier}`}</span>`;
 
@@ -137,6 +159,7 @@ function lockedCardHtml(stall: StallSnapshot): string {
         <span class="stall__status">尚未解鎖</span>
         <div class="stall__actions">
           <button class="btn" data-testid="unlock-${stall.id}" data-action="unlock" data-stall="${stall.id}" ${stall.canUnlock ? '' : 'disabled'}>解鎖 ${formatMoney(cost)}</button>
+          <span class="stall__shortfall" data-testid="shortfall-unlock-${stall.id}" hidden></span>
         </div>
       </div>
     </li>
@@ -163,6 +186,7 @@ interface LockedCardRefs {
   readonly structure: 'locked';
   readonly li: HTMLLIElement;
   readonly unlockBtn: HTMLButtonElement;
+  readonly shortfallUnlock: HTMLElement;
 }
 
 interface UnlockedCardRefs {
@@ -174,7 +198,11 @@ interface UnlockedCardRefs {
   readonly progressLabel: HTMLElement;
   readonly status: HTMLElement;
   readonly upgradeBtn: HTMLButtonElement;
+  readonly shortfallUpgrade: HTMLElement;
   readonly hireBtn: HTMLButtonElement | null;
+  readonly shortfallHire: HTMLElement | null;
+  /** `hire-hint-<id>` 內的「，雇用後 +X/秒」span（UX #7）；`unlocked-clerk` 沒有。 */
+  readonly hirePreview: HTMLElement | null;
   readonly sellBtn: HTMLButtonElement | null;
 }
 
@@ -194,13 +222,31 @@ function hydrateCard(li: HTMLLIElement, stallId: string, structure: CardStructur
 
   if (structure === 'locked') {
     const unlockBtn = q<HTMLButtonElement>('unlock-' + stallId);
-    const refs: LockedCardRefs = { structure, li, unlockBtn };
+    const shortfallUnlock = q<HTMLElement>('shortfall-unlock-' + stallId);
+    const refs: LockedCardRefs = { structure, li, unlockBtn, shortfallUnlock };
     return refs;
   }
   const hireBtn = li.querySelector<HTMLButtonElement>(SELECT('hire-' + stallId));
   const sellBtn = li.querySelector<HTMLButtonElement>(SELECT('sell-' + stallId));
   if (structure === 'unlocked-clerk' && (hireBtn !== null || sellBtn !== null)) {
     throw new Error(`夜市攤王渲染錯誤：攤位 ${stallId} 已雇店員，不應再有 hire/sell 鈕`);
+  }
+  const shortfallUpgrade = q<HTMLElement>('shortfall-upgrade-' + stallId);
+  let shortfallHire: HTMLElement | null = null;
+  let hirePreview: HTMLElement | null = null;
+  if (structure === 'unlocked-open') {
+    shortfallHire = q<HTMLElement>('shortfall-hire-' + stallId);
+    const hireHint = q<HTMLElement>('hire-hint-' + stallId);
+    hirePreview = hireHint.querySelector<HTMLElement>('.stall__hire-hint-income');
+    if (hirePreview === null) {
+      throw new Error(`夜市攤王渲染錯誤：攤位 ${stallId} 缺少 hire-hint 收益預覽`);
+    }
+  } else if (
+    li.querySelector(
+      `${SELECT('hire-hint-' + stallId)}, ${SELECT('shortfall-hire-' + stallId)}`,
+    ) !== null
+  ) {
+    throw new Error(`夜市攤王渲染錯誤：攤位 ${stallId} 已雇店員，不應再有 hire 說明／shortfall-hire`);
   }
   const refs: UnlockedCardRefs = {
     structure,
@@ -211,7 +257,10 @@ function hydrateCard(li: HTMLLIElement, stallId: string, structure: CardStructur
     progressLabel: q('progress-label-' + stallId),
     status: q('status-' + stallId),
     upgradeBtn: q('upgrade-' + stallId),
+    shortfallUpgrade,
     hireBtn,
+    shortfallHire,
+    hirePreview,
     sellBtn,
   };
   return refs;
@@ -305,6 +354,8 @@ function updateCard(card: CardRefs, stall: StallSnapshot, onboardingOn: boolean)
     setBtnState(card.unlockBtn, `解鎖 ${formatMoney(stall.unlockCost ?? 0)}`, stall.canUnlock);
     // UX #10：錢夠的時候「可解鎖」要有明顯強調。
     card.unlockBtn.classList.toggle('btn--ready', stall.canUnlock);
+    // UX #3：還差多少（第 2 批）。
+    setShortfall(card.shortfallUnlock, stall.shortfall.unlock);
     return;
   }
 
@@ -330,6 +381,7 @@ function updateCard(card: CardRefs, stall: StallSnapshot, onboardingOn: boolean)
     stall.upgradeCost === null ? '已達上限' : `升級 ${formatMoney(stall.upgradeCost)}`,
     stall.canUpgrade,
   );
+  setShortfall(card.shortfallUpgrade, stall.shortfall.upgrade);
 
   if (card.sellBtn !== null) {
     // UX #2：sell 按鈕維持動作文案；UX #1：開局引導時讓它發光。
@@ -342,6 +394,18 @@ function updateCard(card: CardRefs, stall: StallSnapshot, onboardingOn: boolean)
       `雇店員 ${formatMoney(stall.hireCost ?? 0)}`,
       stall.canHire,
     );
+  }
+  // UX #3：還差多少（第 2 批）。
+  setShortfall(card.shortfallHire, stall.shortfall.hire);
+  // UX #7：雇用後收益預覽（第 2 批）。`null`（未解鎖／已雇用）只留固定說明文字。
+  if (card.hirePreview !== null) {
+    const preview = stall.incomePerSecIfHired;
+    if (preview === null) {
+      card.hirePreview.hidden = true;
+    } else {
+      setText(card.hirePreview, `，雇用後 +${formatMoney(preview)}/秒`);
+      card.hirePreview.hidden = false;
+    }
   }
 }
 

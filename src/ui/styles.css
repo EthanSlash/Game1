@@ -191,6 +191,11 @@ body {
   line-height: 1.4;
 }
 
+/* UX #7（第 2 批）：「，雇用後 +X/秒」預覽段落，數字隨 tick 更新，null 時 hidden。 */
+.stall__hire-hint-income {
+  font-variant-numeric: tabular-nums;
+}
+
 .stall__income {
   color: var(--accent);
   font-size: 0.95rem;
@@ -219,6 +224,15 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* UX #3：還差多少錢（shortfall-<動作>-<id>）。flex-basis 100% 讓它獨佔一行、
+   直接落在自己的按鈕下方；只在 shortfall.<動作> > 0 時由 renderer 打開。 */
+.stall__shortfall {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--accent);
 }
 
 .btn {
@@ -268,6 +282,13 @@ body {
   }
 }
 
+/* 無限循環的動畫對使用者沒有截止點：偏好減量動畫時關掉（審查遺留項第 2 點）。 */
+@media (prefers-reduced-motion: reduce) {
+  .btn--glow {
+    animation: none;
+  }
+}
+
 /* UX #4：動作成功回饋。卡片亮一下 + 數字跳一下（class 由 renderer 加，動畫結束移除）。 */
 .stall--flash {
   animation: card-flash 0.7s ease-out;
@@ -282,9 +303,14 @@ body {
   }
 }
 
+/* .pop-num 同時掛在 span（.stall__level）與 block div（.stall__income）上；
+   inline-block 只對 span 加，div 本身就能套 transform、也不會改變原排列（審查遺留項第 1 點）。 */
 .pop-num {
-  display: inline-block;
   animation: num-pop 0.5s ease-out;
+}
+
+span.pop-num {
+  display: inline-block;
 }
 
 @keyframes num-pop {
