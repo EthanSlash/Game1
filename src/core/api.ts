@@ -121,6 +121,22 @@ export interface GameState {
   readonly lastSettledAt: TimestampMs;
 }
 
+/**
+ * 每個動作目前還差多少錢（GDD §5.1，UX 清單 #3）。
+ *
+ * 語意（怪獸8號 2026-10-23 定案）：
+ * - `number`：這個動作目前可行，只差這些錢；**錢夠就是 `0`**，不是 `null`。
+ * - `null`：這個動作目前不可行，而且原因**不是錢不夠**（解鎖鏈未開、已達
+ *   `maxLevel`、已經雇用店員）。UI 不該顯示「還差多少」，因為錢再多也不能做。
+ *
+ * 差額不取整（`balance` 是浮點），顯示照舊走 `formatMoney`。
+ */
+export interface ActionShortfall {
+  readonly unlock: number | null;
+  readonly upgrade: number | null;
+  readonly hire: number | null;
+}
+
 /** 里程碑在畫面上的呈現（進度條用）。 */
 export interface MilestoneView {
   readonly level: number;
@@ -155,6 +171,16 @@ export interface StallSnapshot {
   readonly canHire: boolean;
   /** 現在是否允許切換開賣／收攤。 */
   readonly canToggleSell: boolean;
+  /**
+   * 每個動作還差多少錢（GDD §5.1）：錢夠 → `0`，動作不可行且原因不是錢 → `null`。
+   * 只給顯示用；能不能按仍以 `can*` 為準。
+   */
+  readonly shortfall: ActionShortfall;
+  /**
+   * 如果現在雇用店員，這攤的每秒收益（含里程碑與店員倍率）；未解鎖或已雇用 → `null`。
+   * 給雇用前預覽用（UX 清單 #7），UI 不自己算。
+   */
+  readonly incomePerSecIfHired: number | null;
   /** 下一個尚未達成的里程碑；全部達成或已達上限為 null。 */
   readonly nextMilestone: MilestoneView | null;
 }

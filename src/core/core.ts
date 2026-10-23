@@ -86,6 +86,15 @@ export function createCore(config: BalanceConfig): NightMarketCore {
     return mode === 'foreground' ? stall.clerkHired || stall.selling : stall.clerkHired;
   }
 
+  /**
+   * GDD §5.1：動作還差多少錢。錢夠回 `0`（不是 `null`），差額不取整。
+   * 「不可行且原因不是錢」由呼叫端回 `null`。
+   */
+  function shortfallOf(cost: number, balance: number): number {
+    const missing = cost - balance;
+    return missing > 0 ? missing : 0;
+  }
+
   /** GDD §4.3：整頁在該模式下的每秒速率。 */
   function ratePerSec(state: GameState, mode: SettleMode): number {
     let total = 0;
@@ -148,6 +157,8 @@ export function createCore(config: BalanceConfig): NightMarketCore {
           index === 0 ? true : previous !== undefined && stateOf(state, previous.id)?.unlocked === true;
         const upgradeCost = stall.unlocked ? upgradeCostOf(def, stall.level) : null;
         const counts = stall.unlocked && (stall.clerkHired || stall.selling);
+        const canToggleSell = stall.unlocked && !stall.clerkHired;
+        const canHire = canToggleSell && state.balance >= def.hireCost;
 
         return {
           id: def.id,
@@ -163,8 +174,19 @@ export function createCore(config: BalanceConfig): NightMarketCore {
           hireCost: stall.unlocked && !stall.clerkHired ? def.hireCost : null,
           canUnlock: !stall.unlocked && previousUnlocked && state.balance >= def.unlockCost,
           canUpgrade: upgradeCost !== null && state.balance >= upgradeCost,
-          canHire: stall.unlocked && !stall.clerkHired && state.balance >= def.hireCost,
-          canToggleSell: stall.unlocked && !stall.clerkHired,
+          canHire,
+          canToggleSell,
+          shortfall: {
+            // 已解鎖或解鎖鏈前提不成立 → null：有錢也不能解鎖，不該顯示「還差多少」。
+            unlock:
+              stall.unlocked || !previousUnlocked
+                ? null
+                : shortfallOf(def.unlockCost, state.balance),
+            upgrade: upgradeCost === null ? null : shortfallOf(upgradeCost, state.balance),
+            hire: canToggleSell ? shortfallOf(def.hireCost, state.balance) : null,
+          },
+          // 雇用預覽：只算「還沒雇」的已解鎖攤位；含里程碑與店員倍率（GDD §4.1／§4.2）。
+          incomePerSecIfHired: canToggleSell ? stallIncomePerSec(def, stall.level, true) : null,
           nextMilestone: nextMilestoneOf(stall.level),
         };
       });

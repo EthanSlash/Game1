@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 版本 | 1.1（2026-10-22 定案；v1.1 依 怪獸8號 01:50 審查補前景長空檔與存檔時機） |
+| 版本 | 1.4（2026-10-23；§5.1 補 `shortfall` 與 `incomePerSecIfHired`，對應 UX 清單 #3／#7） |
 | 對應存檔版本 | `saveVersion = 1` |
 | 唯一數值來源 | `data/balance.json`（本文件只寫公式與規則，不重複列值） |
 | 對應程式契約 | `src/core/api.ts`（`NightMarketCore` / `GameEngine`） |
@@ -218,8 +218,25 @@ settle(state, now, mode: 'foreground' | 'offline'): SettleResult
 | `canUpgrade` | `unlocked && level < maxLevel && balance >= upgradeCost(level)` |
 | `canHire` | `unlocked && !clerkHired && balance >= hireCost` |
 | `canToggleSell` | `unlocked && !clerkHired` |
+| `shortfall.unlock` | 已解鎖，或前一攤未解鎖 → `null`；否則 `max(0, unlockCost - balance)` |
+| `shortfall.upgrade` | 未解鎖，或 `level >= maxLevel` → `null`；否則 `max(0, upgradeCost(level) - balance)` |
+| `shortfall.hire` | 未解鎖，或已雇用 → `null`；否則 `max(0, hireCost - balance)` |
+| `incomePerSecIfHired` | 未解鎖或已雇用 → `null`；否則 `stallIncomePerSec(level, clerkHired = true)`（含里程碑倍率與店員倍率） |
 | `nextMilestone` | 第一個 `level > 目前等級` 的里程碑；沒有 → `null` |
 | `nextMilestone.progress` | `clamp((level - prev) / (next.level - prev), 0, 1)`；`prev` = 前一個已達成的里程碑等級，第一段用 0 |
+
+`shortfall` 的值語意（UX 清單 #3，怪獸8號 2026-10-23 定案）：
+
+- `0`：錢夠，這個動作現在可以做。
+- `> 0`：還差這些錢（差額不取整；`balance` 是浮點，顯示照舊走 `formatMoney`）。
+- `null`：這個動作目前不可行，而且**原因不是錢**（解鎖鏈前提未滿足、已達 `maxLevel`、已雇用店員）。
+  UI 不該顯示「還差多少」——錢再多也不能做，顯示差額會誤導玩家。
+- `shortfall` **不含 `toggleSell`**：它是免費動作，沒有差額可言。
+- 能不能按仍以 `can*` 為準；`shortfall` 只給「還差多少」的顯示用，UI 不得自己比大小。
+
+`incomePerSecIfHired` 是「現在雇用店員後這攤的每秒收益」，供雇用前預覽（UX 清單 #7）；
+數值等於同一等級下 `clerkHired = true` 的 `stallIncomePerSec`，UI 不自己算，也不套用前景／離線規則
+（那是結算時才決定的事）。
 
 進度條例子（里程碑 25/50/100）：Lv1 → 1/25 = 0.04；Lv25 → 0（往 50 重新起算）；Lv50 → 0（往 100，區間寬 50）；
 Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格。
@@ -459,6 +476,7 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 | 2026-10-22 | 1.0 | 初版定案：公式、動作、離線、存檔 v1 + v0 遷移、數字格式、平衡目標。解決 `src/core/API_CONTRACT.md` §9 的 8 個待定項。 |
 | 2026-10-22 | 1.1 | 依 怪獸8號 01:50 審查修訂：①前景長空檔（> `foreground.maxGapSeconds`）自動改用離線規則結算並在 `tick` 帶出彈窗（§4.6、§6、§9 C6/C7）；②補存檔時機 UI 硬規則（§6.1）；③升級成本整數保證限定在 ≤ `MAX_SAFE_INTEGER`、A2 限定低等級（§4.4、§9）；④§10 模擬結果標示待 `tools/sim` 重現。`balance.json` 新增 `foreground.maxGapSeconds` 與 `save.foregroundIntervalSeconds`。 |
 | 2026-10-22 | 1.2 | `tools/sim` 落地（`npm run sim`）：§10「現值模擬」欄改用實測值並移除待重現標示。與 v1.1 草案差異 ≤ 12%（1 小時速率 383 → 429/秒、蚵仔煎 38.0 → 34.1 分、臭豆腐 84.1 分 → 1.32 小時），全部在 ±30% 容許範圍內，`balance.json` 未調整。同時補三個規格空白（怪獸8號 2026-10-22 裁決）：①§6 重複 `onHidden` 只結算第一次，`onVisible` 之前再呼叫一律忽略；②§8.2 已解鎖但 `level = 0` 讀檔正規化成 Lv1，不算損毀；③§8.1／§8.2 版本以外層信封 `version` 為準、內層 `state.saveVersion` 不檢查、讀檔後改寫成 `currentVersion`。§9 補對應驗收列 E3／D6／D7。 |
+| 2026-10-23 | 1.4 | §5.1 新增 `StallSnapshot.shortfall`（`{unlock, upgrade, hire}`，每個值 `number \| null`：錢夠為 `0`、不可行且原因不是錢為 `null`）與 `incomePerSecIfHired`（雇用店員後的每秒收益，含里程碑與店員倍率）。對應 UX 清單 #3「看不出還差多少錢」與 #7「雇用前沒有收益預覽」。`shortfall` 不含免費的 `toggleSell`；能不能按仍以 `can*` 為準。（v1.3 為 §9 驗收清單 G1–G10 的補充，見 GDD v1.3 PR。） |
 
 已解決的待定項（原 `API_CONTRACT.md` §9）：
 

@@ -81,6 +81,12 @@ OfflineSettlement = { gained; creditedMs; capped; timeWentBackwards }
   （怪獸8號審查第 4 點：錢不夠要 disabled 但仍顯示金額）。
 - `StallSnapshot.incomePerSec` 已含里程碑倍率；`GameSnapshot.incomePerSec` 是**前景**速率
   （畫面上正在跳的數字，GDD §4.3／§5.1）。
+- `StallSnapshot.shortfall` 是「每個動作還差多少錢」：`{ unlock, upgrade, hire }`，每個值是
+  `number | null`。`0` = 錢夠（可以做）、`> 0` = 還差這些錢、`null` = 這個動作不可行且
+  **原因不是錢**（解鎖鏈未開／`maxLevel`／已雇用），UI 不顯示差額。`toggleSell` 免費、不列入。
+  能不能按仍以 `can*` 為準（GDD §5.1，UX 清單 #3）。
+- `StallSnapshot.incomePerSecIfHired` 是「現在雇用店員後的每秒收益」（含里程碑與店員倍率）；
+  未解鎖或已雇用為 `null`。供雇用前預覽，UI 不自己算（GDD §5.1，UX 清單 #7）。
 - `nextMilestone.progress` 為 0..1，已達成給 1。
 
 ## 4. 動作結果
@@ -138,6 +144,8 @@ settle(state, now, mode: 'foreground' | 'offline'): SettleResult
 | 背景回來不重複 | 同一段時間連續兩次 `settle`，總入帳只等於一次；`onHidden` 後的 `tick` 一律忽略 |
 | 手動開賣 vs 離線 | 只有 `selling`、沒有店員的攤位：前景有收益、離線結算為 0（GDD §4.3） |
 | 里程碑 25/50/100 | `snapshot().stalls[i].incomePerSec` 在門檻前後符合 GDD 倍率（累乘，Lv100 = ×8） |
+| 還差多少錢（`shortfall`） | 錢不夠 → `max(0, 成本 - balance)`；**餘額剛好等於成本 → `0`**（不是 `null`）；解鎖鏈未開／`maxLevel`／已雇用 → `null`；不含 `toggleSell` |
+| 雇用預覽（`incomePerSecIfHired`） | 未解鎖或已雇用 → `null`；否則等於同 `level`、`clerkHired = true` 的 `stallIncomePerSec`（含里程碑與店員倍率） |
 | 存檔損毀 | `load()` 回 `ok: false` 且 `reason` 為三者之一，不丟例外；`init` 開新局且 `loadError` 有值 |
 | 沒有存檔（`init(now, null)`） | 開新局、`loadError` 為 `null`（正常首啟，不算錯誤） |
 | 版本 0 存檔 | `load()` 回 `ok: true`、`migratedFrom: 0`（GDD §8.3） |

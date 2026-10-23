@@ -202,6 +202,125 @@ describe('snapshot（GDD §4.2、§4.3、§5.1）', () => {
   });
 });
 
+describe('快照提示欄位 shortfall / incomePerSecIfHired（GDD §5.1）', () => {
+  /** 指定攤位等級與狀態的 state（其餘攤位維持開局狀態）。 */
+  function stateAt(
+    id: string,
+    level: number,
+    options: { unlocked?: boolean; clerkHired?: boolean; balance?: number } = {},
+  ): GameState {
+    const base = stateWithBalance(options.balance ?? 0);
+    return {
+      ...base,
+      stalls: {
+        ...base.stalls,
+        [id]: {
+          level,
+          unlocked: options.unlocked ?? true,
+          clerkHired: options.clerkHired ?? false,
+          selling: false,
+        },
+      },
+    };
+  }
+
+  it('錢不夠回差額；錢剛好等於成本回 0（不是 null）', () => {
+    const short = core.snapshot(stateWithBalance(3)).stalls[0];
+    expect(short?.shortfall).toEqual({ unlock: null, upgrade: 7, hire: 147 });
+    expect(short?.canUpgrade).toBe(false);
+
+    const exactUpgrade = core.snapshot(stateWithBalance(10)).stalls[0];
+    expect(exactUpgrade?.shortfall.upgrade).toBe(0);
+    expect(exactUpgrade?.canUpgrade).toBe(true);
+
+    const exactHire = core.snapshot(stateWithBalance(150)).stalls[0];
+    expect(exactHire?.shortfall.hire).toBe(0);
+    expect(exactHire?.canHire).toBe(true);
+
+    const exactUnlock = core.snapshot(stateWithBalance(400)).stalls[1];
+    expect(exactUnlock?.shortfall.unlock).toBe(0);
+    expect(exactUnlock?.canUnlock).toBe(true);
+  });
+
+  it('差額不取整（balance 是浮點）', () => {
+    const fractional = core.snapshot(stateWithBalance(9.5)).stalls[0];
+    expectClose(fractional?.shortfall.upgrade ?? 0, 0.5);
+  });
+
+  it('已解鎖 → unlock 為 null；解鎖鏈前提未滿足也回 null（即使錢夠）', () => {
+    const initial = core.snapshot(stateWithBalance(1_000_000));
+    expect(initial.stalls[0]?.shortfall.unlock).toBeNull();
+
+    // 蚵仔煎的前一攤（珍珠奶茶）還沒解鎖：有錢也不能解鎖，不顯示差額。
+    expect(initial.stalls[2]?.canUnlock).toBe(false);
+    expect(initial.stalls[2]?.shortfall.unlock).toBeNull();
+    // 珍奶本身前置成立，只是錢的問題 → 有差額。
+    expect(initial.stalls[1]?.shortfall.unlock).toBe(0);
+  });
+
+  it('已達 maxLevel → upgrade 為 null', () => {
+    const cappedCore = createCore({
+      ...BALANCE_CONFIG,
+      stalls: BALANCE_CONFIG.stalls.map((def) =>
+        def.id === 'chicken-steak' ? { ...def, maxLevel: 2 } : def,
+      ),
+    });
+    const base = cappedCore.createInitialState(T0);
+    const atMax: GameState = {
+      ...base,
+      balance: 1_000_000,
+      stalls: { ...base.stalls, 'chicken-steak': { level: 2, unlocked: true, clerkHired: false, selling: false } },
+    };
+    const chicken = cappedCore.snapshot(atMax).stalls[0];
+
+    expect(chicken?.upgradeCost).toBeNull();
+    expect(chicken?.shortfall.upgrade).toBeNull();
+    expect(chicken?.shortfall.hire).toBe(0);
+  });
+
+  it('已雇用 → hire 與 incomePerSecIfHired 為 null；升級提示不受影響', () => {
+    const hired = expectSuccess(core.hire(stateWithBalance(10_000), 'chicken-steak'));
+    const chicken = core.snapshot(hired).stalls[0];
+
+    expect(chicken?.clerkHired).toBe(true);
+    expect(chicken?.shortfall.hire).toBeNull();
+    expect(chicken?.incomePerSecIfHired).toBeNull();
+    expect(chicken?.shortfall.upgrade).toBe(0);
+  });
+
+  it('未解鎖攤位：upgrade／hire／incomePerSecIfHired 為 null，unlock 有差額', () => {
+    const tea = core.snapshot(stateWithBalance(100)).stalls[1];
+
+    expect(tea?.shortfall).toEqual({ unlock: 300, upgrade: null, hire: null });
+    expect(tea?.incomePerSecIfHired).toBeNull();
+  });
+
+  it('incomePerSecIfHired 含里程碑倍率與店員倍率（Lv1、Lv24、Lv25、Lv50）', () => {
+    const chicken = stallDef('chicken-steak');
+    const base = chicken.baseIncomePerSec;
+    const growth = BALANCE_CONFIG.incomeGrowthPerLevel;
+    const clerk = BALANCE_CONFIG.clerkIncomeMultiplier;
+    const previewAt = (level: number): number =>
+      core.snapshot(stateAt('chicken-steak', level)).stalls[0]?.incomePerSecIfHired ?? 0;
+
+    expectClose(previewAt(1), base * clerk);
+    // Lv25 跨過第一個里程碑：倍率 ×2，再乘店員倍率。
+    expectClose(previewAt(24), base * growth ** 23 * clerk);
+    expectClose(previewAt(25), base * growth ** 24 * 2 * clerk);
+    // Lv50 累乘到 ×4。
+    expectClose(previewAt(50), base * growth ** 49 * 4 * clerk);
+  });
+
+  it('預覽值 = 真的雇用後的 incomePerSec（Lv1）', () => {
+    const preview = core.snapshot(stateWithBalance(10_000)).stalls[0]?.incomePerSecIfHired ?? 0;
+    const hired = expectSuccess(core.hire(stateWithBalance(10_000), 'chicken-steak'));
+    const actual = core.snapshot(hired).stalls[0]?.incomePerSec ?? 0;
+
+    expect(preview).toBeGreaterThan(0);
+    expectClose(actual, preview);
+  });
+});
+
 describe('upgrade（GDD §4.4、§5）', () => {
   it('錢不夠 → insufficient-funds 且回傳同一 state', () => {
     const state = core.createInitialState(T0);
