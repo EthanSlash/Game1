@@ -9,7 +9,7 @@
  * 契約型別在 `./api`，規格在 `docs/GDD.md`，實作在 `./core`、`./engine`、`./save`。
  */
 
-import balanceData from '../../data/balance.json';
+import balanceData from '../../data/balance.json' with { type: 'json' };
 
 import type { BalanceConfig } from './api';
 

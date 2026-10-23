@@ -398,7 +398,7 @@ Lv75 → (75-50)/50 = 0.5；Lv100 → `nextMilestone = null`、UI 顯示滿格�
 | E2 | 連續兩次 `onVisible` | 第二次 `gained === 0` |
 | E3 | 重複 `onHidden`（v1.2） | 已在 hidden 時再呼叫 `onHidden` 不結算、不改狀態；回到 `onVisible` 後仍結算完整背景區間，不被截短 |
 | F1–F5 | 數字格式 | 依 §7 表 |
-| G1–G8 | E2E | 依 `src/ui/testids.md`，金額一律 `formatMoney` |
+| G1–G10 | 玩法 E2E | 依 `src/ui/testids.md`，金額一律 `formatMoney`；案例定義見 `tests/e2e/README.md`：G1 開局畫面、G2 開賣入帳、G3 升級、G4 雇店員、G5 解鎖、G6 解鎖鏈、G7 動作後存檔重載、G8 離線收益彈窗、G9 前景定期存檔、G10 前景長空檔改用離線規則 |
 
 **A1「狀態完全不變」怎麼測**：門面動作會先結算，時間有推進時 `balance` 本來就會變。要斷言
 「失敗不動狀態」，請用純函式層（`upgrade(state, id)` 不帶 `now`，失敗回同一個 `state` 參考），
