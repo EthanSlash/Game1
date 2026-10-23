@@ -9,10 +9,16 @@
 跑法：
 
 ```bash
-npm run e2e                      # 三個 project（iPhone 13 / Pixel 7 / WebKit iPhone 13）都跑
-npx playwright test tests/e2e/gameplay.spec.ts --project=iphone-13
-npx playwright test --project=webkit-iphone-13   # 只跑 WebKit
+npm run e2e                      # 兩個 project 都跑（iPhone 13 = WebKit、Pixel 7 = Chromium）
+npx playwright test tests/e2e/gameplay.spec.ts --project=iphone-13   # 只跑 WebKit
+npx playwright test --project=pixel-7                                # 只跑 Chromium
 ```
+
+> **`iphone-13` 這個 project 跑的就是 WebKit，不用再加一個 WebKit project。**
+> `devices['iPhone 13']` 的 `defaultBrowserType` 是 `webkit`（`devices['Pixel 7']` 是 `chromium`），
+> Playwright 在 project 沒指定 `browserName` 時就用這個值決定瀏覽器。實測（Playwright 1.64.1，
+> 在測試裡讀 `browser.browserType().name()`）：`--project=iphone-13` → `webkit`、`--project=pixel-7` → `chromium`。
+
 
 ---
 

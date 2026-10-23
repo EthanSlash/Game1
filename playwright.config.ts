@@ -14,7 +14,6 @@ export default defineConfig({
   projects: [
     { name: 'iphone-13', use: { ...devices['iPhone 13'] } },
     { name: 'pixel-7', use: { ...devices['Pixel 7'] } },
-    { name: 'webkit-iphone-13', use: { ...devices['iPhone 13'], browserName: 'webkit' } },
   ],
   webServer: {
     command: 'npm run dev -- --port 5174 --strictPort',
